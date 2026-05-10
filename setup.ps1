@@ -18,8 +18,6 @@ param(
 )
 
 # --- Config ---
-$FLUTTER_VERSION = "3.19.0"
-$FLUTTER_ZIP_URL = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_$FLUTTER_VERSION-stable.zip"
 $JDK_VERSION = "17"
 $MIN_DART_VERSION = "3.2.0"
 
@@ -131,7 +129,7 @@ function Find-Flutter {
 Write-Host ""
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host "  Silver Voice - Full Environment Setup" -ForegroundColor Cyan
-Write-Host "  Target: Flutter $FLUTTER_VERSION / Dart >= $MIN_DART_VERSION / Java $JDK_VERSION" -ForegroundColor Cyan
+Write-Host "  Target: Flutter (latest stable) / Dart >= $MIN_DART_VERSION / Java $JDK_VERSION" -ForegroundColor Cyan
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -406,40 +404,26 @@ if ($diagnosis["java"] -ne "OK") {
     }
 }
 
-# --- Install Flutter SDK ---
+# --- Install Flutter SDK (latest stable via git) ---
 if ($diagnosis["flutter"] -ne "OK") {
     $installStep++
     $flutterDir = "$InstallDir\flutter"
-    Write-Status "[$installStep/$installTotal]" "WORK" "Installing Flutter $FLUTTER_VERSION to $flutterDir ..."
+    Write-Status "[$installStep/$installTotal]" "WORK" "Installing Flutter (latest stable) to $flutterDir ..."
 
     if (-not (Test-Path $InstallDir)) {
         New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     }
 
-    $zipPath = "$env:TEMP\flutter_$FLUTTER_VERSION.zip"
-
-    if (-not (Test-Path $zipPath)) {
-        Write-Host "         Downloading Flutter SDK (~1.1 GB)..." -ForegroundColor DarkGray
-        try {
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            $wc = New-Object System.Net.WebClient
-            $wc.DownloadFile($FLUTTER_ZIP_URL, $zipPath)
-            Write-Host "         Download complete." -ForegroundColor DarkGray
-        } catch {
-            Write-Status "[$installStep/$installTotal]" "FAIL" "Download failed: $_"
-            Write-Host "         Manual download: $FLUTTER_ZIP_URL" -ForegroundColor Yellow
-            exit 1
-        }
-    } else {
-        Write-Host "         Using cached zip: $zipPath" -ForegroundColor DarkGray
+    if (-not (Test-CommandExists "git")) {
+        Write-Status "[$installStep/$installTotal]" "FAIL" "Git is required to install Flutter. Install Git first."
+        exit 1
     }
 
-    Write-Host "         Extracting (this takes a few minutes)..." -ForegroundColor DarkGray
-    try {
-        Expand-Archive -Path $zipPath -DestinationPath $InstallDir -Force
-        Write-Host "         Extraction complete." -ForegroundColor DarkGray
-    } catch {
-        Write-Status "[$installStep/$installTotal]" "FAIL" "Extraction failed: $_"
+    Write-Host "         Cloning Flutter stable branch (this takes a few minutes)..." -ForegroundColor DarkGray
+    $cloneOut = & git clone https://github.com/flutter/flutter.git -b stable "$flutterDir" 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0 -and -not (Test-Path "$flutterDir\bin\flutter.bat")) {
+        Write-Status "[$installStep/$installTotal]" "FAIL" "Flutter clone failed"
+        Write-Host $cloneOut -ForegroundColor Red
         exit 1
     }
 
@@ -447,10 +431,15 @@ if ($diagnosis["flutter"] -ne "OK") {
     if (Test-Path "$flutterBin\flutter.bat") {
         Add-ToUserPath $flutterBin | Out-Null
         $env:Path += ";$flutterBin"
-        Write-Status "[$installStep/$installTotal]" "OK" "Flutter $FLUTTER_VERSION installed to $flutterDir"
+
+        Write-Host "         Running initial Flutter setup (flutter doctor)..." -ForegroundColor DarkGray
+        & flutter doctor 2>&1 | Out-String | Out-Null
+
+        $installedVer = ((& flutter --version 2>&1 | Out-String) -split "`n")[0].Trim()
+        Write-Status "[$installStep/$installTotal]" "OK" "$installedVer installed to $flutterDir"
         Write-Status "     " "INFO" "Added to User PATH: $flutterBin"
     } else {
-        Write-Status "[$installStep/$installTotal]" "FAIL" "Flutter extraction incomplete. Check $flutterDir"
+        Write-Status "[$installStep/$installTotal]" "FAIL" "Flutter clone incomplete. Check $flutterDir"
         exit 1
     }
 }
