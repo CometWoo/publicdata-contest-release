@@ -301,10 +301,14 @@ class _MainScreenState extends State<MainScreen> {
       _addLog('API: Loaded ${_jobs.length} jobs.');
     } else {
       _addLog('API Error: ${result.errorMessage}');
-      if (result.errorMessage != null &&
-          !result.errorMessage!.startsWith('HTTP') &&
-          !result.errorMessage!.startsWith('Network')) {
-        _showDialog('알림', result.errorMessage!);
+      // [수정] 네트워크/HTTP 에러도 사용자에게 안내
+      if (result.errorMessage != null) {
+        if (result.errorMessage!.startsWith('Network') ||
+            result.errorMessage!.startsWith('HTTP')) {
+          _showDialog('연결 실패', '서버에 연결할 수 없습니다.\n네트워크 상태를 확인해주세요.');
+        } else {
+          _showDialog('알림', result.errorMessage!);
+        }
       }
     }
   }
@@ -353,12 +357,16 @@ class _MainScreenState extends State<MainScreen> {
       _showDialog('알림', '이력서가 초기화되었습니다.');
       _wsService.send({'type': 'sync_resume', 'user_id': _userId});
       setState(() {
+        _resume = null;
+        _missingKorean = [];
         _transcript = '';
         _aiResponse = '';
         _currentIndex = 1;
       });
     } else {
+      // [수정] 초기화 실패 시 사용자에게 에러 표시
       _addLog('API Reset Error: ${result.errorMessage}');
+      _showDialog('초기화 실패', '서버와 연결할 수 없습니다.\n잠시 후 다시 시도해주세요.');
     }
   }
 

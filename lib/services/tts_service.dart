@@ -16,6 +16,10 @@ class TtsService {
   String? _lastError;
   String? get lastError => _lastError;
 
+  // [수정] 초기화 완료를 추적하여 speak() 호출 시 대기
+  final Completer<bool> _initCompleter = Completer<bool>();
+  bool _isInitialized = false;
+
   // [수정] 외부에서 상태 변화를 수신하는 콜백
   VoidCallback? onStateChanged;
   void Function(String error)? onError;
@@ -86,6 +90,8 @@ class TtsService {
         onError?.call('TTS 오류: $msg');
       });
 
+      _isInitialized = true;
+      _initCompleter.complete(true);
       DebugLogger.logAppEvent('[TTS] 초기화 완료 (ko-KR, rate=0.45)');
       return true;
     } catch (e, stackTrace) {
@@ -97,6 +103,7 @@ class TtsService {
       );
       _lastError = e.toString();
       _setState(TtsState.error);
+      _initCompleter.complete(false);
       onError?.call('TTS 초기화 실패: $e');
       return false;
     }
@@ -105,6 +112,15 @@ class TtsService {
   // [수정] 텍스트를 음성으로 변환하여 재생
   Future<bool> speak(String text) async {
     if (text.trim().isEmpty) return false;
+
+    // [수정] 초기화 완료 대기
+    if (!_isInitialized) {
+      final ready = await _initCompleter.future;
+      if (!ready) {
+        onError?.call('TTS 엔진을 사용할 수 없습니다.');
+        return false;
+      }
+    }
 
     try {
       DebugLogger.logAppEvent('[TTS] 요청: "${text.substring(0, text.length > 30 ? 30 : text.length)}..."');

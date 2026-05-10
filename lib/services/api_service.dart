@@ -8,16 +8,21 @@ class ApiService {
   // [개선] userId를 외부에서 주입받도록 변경 — 하드코딩 제거
   final String userId;
 
+  // [수정] API 요청 타임아웃 설정
+  static const Duration _requestTimeout = Duration(seconds: 15);
+
   ApiService({required this.userId});
 
   Future<ApiResult<List<dynamic>>> fetchJobs() async {
     final endpoint = '/recommend/$userId';
-    final stopwatch = Stopwatch()..start(); // [디버그 Level 2] 소요시간 측정
+    final stopwatch = Stopwatch()..start();
+
+    DebugLogger.logAppEvent('[API] 요청: POST ${AppConfig.serverUrl}$endpoint');
 
     try {
       final res = await http.post(
         Uri.parse('${AppConfig.serverUrl}$endpoint'),
-      );
+      ).timeout(_requestTimeout);
       stopwatch.stop();
 
       // [디버그 Level 2] API 통신 로깅
@@ -76,10 +81,12 @@ class ApiService {
     final endpoint = '/resume/$userId';
     final stopwatch = Stopwatch()..start();
 
+    DebugLogger.logAppEvent('[API] 요청: DELETE ${AppConfig.serverUrl}$endpoint');
+
     try {
       final res = await http.delete(
         Uri.parse('${AppConfig.serverUrl}$endpoint'),
-      );
+      ).timeout(_requestTimeout);
       stopwatch.stop();
 
       // [디버그 Level 2] API 통신 로깅

@@ -2,15 +2,15 @@
 import 'package:flutter/foundation.dart';
 
 class AppConfig {
-  // [개선] 환경변수(--dart-define)에서 주입받도록 변경. 소스코드에 URL 노출 방지
+  // [수정] 백엔드 호스트를 올바른 RunPod 주소로 변경
   static const String serverUrl = String.fromEnvironment(
     'SERVER_URL',
-    defaultValue: 'https://0oof8muhxkpy97-8000.proxy.runpod.net/',
+    defaultValue: 'https://7xnxs8gfnhz39w-8000.proxy.runpod.net/',
   );
 
   static const String wsUrl = String.fromEnvironment(
     'WS_URL',
-    defaultValue: 'wss://0oof8muhxkpy97-8000.proxy.runpod.net/voice/ws',
+    defaultValue: 'wss://7xnxs8gfnhz39w-8000.proxy.runpod.net/voice/ws',
   );
 
   // [개선] 시니어 친화적 UI 상수 — 최소 폰트 크기, 터치 영역 등을 중앙 관리
