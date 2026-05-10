@@ -239,15 +239,56 @@ if ((Test-Path $asPath) -or (Test-Path $asPath2) -or (Test-Path $asLocal)) {
     $diagnosis["android_studio"] = "MISSING"
 }
 
-# 6. Android SDK
+# 6. Android SDK + required components
 $step = "[6/8]"
 $androidSdkPath = if ($env:ANDROID_HOME) { $env:ANDROID_HOME }
                   elseif ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT }
                   elseif (Test-Path "$env:LOCALAPPDATA\Android\Sdk") { "$env:LOCALAPPDATA\Android\Sdk" }
                   else { $null }
+
+# Required components for Flutter 3.41+
+$requiredPlatform = "android-36"
+$requiredBuildTools = "28.0.3"
+
 if ($androidSdkPath -and (Test-Path $androidSdkPath)) {
     Write-Status $step "OK" "Android SDK" "Path: $androidSdkPath"
     $diagnosis["android_sdk"] = "OK"
+
+    # Check cmdline-tools (needed to install missing components)
+    if (Test-Path "$androidSdkPath\cmdline-tools\latest\bin\sdkmanager.bat") {
+        Write-Status "     " "OK" "cmdline-tools installed"
+        $diagnosis["cmdline_tools"] = "OK"
+    } else {
+        Write-Status "     " "FAIL" "cmdline-tools not found (needed to install SDK components)"
+        $diagnosis["cmdline_tools"] = "MISSING"
+    }
+
+    # Check platform android-36
+    if (Test-Path "$androidSdkPath\platforms\$requiredPlatform") {
+        Write-Status "     " "OK" "platforms;$requiredPlatform installed"
+        $diagnosis["platform_36"] = "OK"
+    } else {
+        Write-Status "     " "FAIL" "platforms;$requiredPlatform missing"
+        $diagnosis["platform_36"] = "MISSING"
+    }
+
+    # Check build-tools 28.0.3
+    if (Test-Path "$androidSdkPath\build-tools\$requiredBuildTools") {
+        Write-Status "     " "OK" "build-tools;$requiredBuildTools installed"
+        $diagnosis["build_tools_28"] = "OK"
+    } else {
+        Write-Status "     " "FAIL" "build-tools;$requiredBuildTools missing"
+        $diagnosis["build_tools_28"] = "MISSING"
+    }
+
+    # Check platform-tools
+    if (Test-Path "$androidSdkPath\platform-tools\adb.exe") {
+        Write-Status "     " "OK" "platform-tools installed"
+        $diagnosis["platform_tools"] = "OK"
+    } else {
+        Write-Status "     " "FAIL" "platform-tools missing"
+        $diagnosis["platform_tools"] = "MISSING"
+    }
 
     # Check license
     $licensePath = "$androidSdkPath\licenses\android-sdk-license"
@@ -261,6 +302,10 @@ if ($androidSdkPath -and (Test-Path $androidSdkPath)) {
 } else {
     Write-Status $step "FAIL" "Android SDK not found"
     $diagnosis["android_sdk"] = "MISSING"
+    $diagnosis["cmdline_tools"] = "MISSING"
+    $diagnosis["platform_36"] = "MISSING"
+    $diagnosis["build_tools_28"] = "MISSING"
+    $diagnosis["platform_tools"] = "MISSING"
     $diagnosis["android_license"] = "MISSING"
 }
 
@@ -500,10 +545,13 @@ if ($diagnosis["flutter"] -ne "OK") {
     }
 }
 
-# --- Install Android SDK (command-line tools) ---
-if ($diagnosis["android_sdk"] -ne "OK") {
+# --- Install cmdline-tools (needed for all SDK component management) ---
+$needsCmdlineTools = ($diagnosis["cmdline_tools"] -ne "OK")
+$needsSdkComponents = ($diagnosis["platform_36"] -ne "OK" -or $diagnosis["build_tools_28"] -ne "OK" -or $diagnosis["platform_tools"] -ne "OK")
+
+if ($needsCmdlineTools -or $diagnosis["android_sdk"] -ne "OK") {
     $installStep++
-    $androidSdkPath = "$InstallDir\Android\Sdk"
+    if (-not $androidSdkPath) { $androidSdkPath = "$InstallDir\Android\Sdk" }
     $cmdlineDir = "$androidSdkPath\cmdline-tools"
     $cmdlineZipUrl = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
     $cmdlineZip = "$env:TEMP\android-cmdline-tools.zip"
@@ -545,45 +593,73 @@ if ($diagnosis["android_sdk"] -ne "OK") {
         }
     }
 
-    $sdkManager = "$cmdlineDir\latest\bin\sdkmanager.bat"
-    if (Test-Path $sdkManager) {
+    if (Test-Path "$cmdlineDir\latest\bin\sdkmanager.bat") {
         # Set ANDROID_HOME
         [Environment]::SetEnvironmentVariable("ANDROID_HOME", $androidSdkPath, "User")
         $env:ANDROID_HOME = $androidSdkPath
         $env:Path += ";$androidSdkPath\cmdline-tools\latest\bin;$androidSdkPath\platform-tools"
-
-        Write-Host "         Installing platform-tools and build-tools..." -ForegroundColor DarkGray
-        echo "y" | & $sdkManager --sdk_root="$androidSdkPath" "platform-tools" "build-tools;34.0.0" "platforms;android-34" 2>&1 | Out-String | Out-Null
-
-        Write-Host "         Accepting licenses..." -ForegroundColor DarkGray
-        echo "y`ny`ny`ny`ny`ny`ny`ny`ny" | & $sdkManager --sdk_root="$androidSdkPath" --licenses 2>&1 | Out-String | Out-Null
-
-        Add-ToUserPath "$androidSdkPath\cmdline-tools\latest\bin" | Out-Null
-        Add-ToUserPath "$androidSdkPath\platform-tools" | Out-Null
-
-        # Tell Flutter where the SDK is
-        if (Test-CommandExists "flutter") {
-            flutter config --android-sdk="$androidSdkPath" 2>&1 | Out-Null
-        }
-
-        Write-Status "[$installStep/$installTotal]" "OK" "Android SDK installed to $androidSdkPath"
+        Write-Status "[$installStep/$installTotal]" "OK" "cmdline-tools ready"
     } else {
         Write-Status "[$installStep/$installTotal]" "FAIL" "sdkmanager not found after extraction"
         Write-Host "         Install Android Studio instead: https://developer.android.com/studio" -ForegroundColor Yellow
     }
 }
 
-# --- Android SDK license (if SDK exists but licenses not accepted) ---
-if ($diagnosis["android_license"] -ne "OK" -and ($diagnosis["android_sdk"] -eq "OK" -or (Test-Path "$androidSdkPath\cmdline-tools\latest\bin\sdkmanager.bat"))) {
+# --- Install missing SDK components via sdkmanager ---
+$sdkMgr = "$androidSdkPath\cmdline-tools\latest\bin\sdkmanager.bat"
+if ($needsSdkComponents -and (Test-Path $sdkMgr)) {
+    $installStep++
+    $componentsToInstall = @()
+
+    if ($diagnosis["platform_36"] -ne "OK") {
+        $componentsToInstall += "platforms;$requiredPlatform"
+    }
+    if ($diagnosis["build_tools_28"] -ne "OK") {
+        $componentsToInstall += "build-tools;$requiredBuildTools"
+    }
+    if ($diagnosis["platform_tools"] -ne "OK") {
+        $componentsToInstall += "platform-tools"
+    }
+
+    $compList = $componentsToInstall -join ", "
+    Write-Status "[$installStep/$installTotal]" "WORK" "Installing SDK components: $compList"
+
+    $sdkArgs = @("--sdk_root=$androidSdkPath") + $componentsToInstall
+    echo "y`ny`ny`ny`ny`ny`ny`ny`ny" | & $sdkMgr @sdkArgs 2>&1 | Out-String | Out-Null
+
+    # Verify
+    $allOk = $true
+    foreach ($comp in $componentsToInstall) {
+        if ($comp -eq "platforms;$requiredPlatform" -and (Test-Path "$androidSdkPath\platforms\$requiredPlatform")) {
+            Write-Status "     " "OK" "$comp installed"
+        } elseif ($comp -eq "build-tools;$requiredBuildTools" -and (Test-Path "$androidSdkPath\build-tools\$requiredBuildTools")) {
+            Write-Status "     " "OK" "$comp installed"
+        } elseif ($comp -eq "platform-tools" -and (Test-Path "$androidSdkPath\platform-tools\adb.exe")) {
+            Write-Status "     " "OK" "$comp installed"
+        } else {
+            Write-Status "     " "WARN" "$comp may need manual install"
+            $allOk = $false
+        }
+    }
+    if ($allOk) {
+        Write-Status "[$installStep/$installTotal]" "OK" "All SDK components installed"
+    }
+
+    Add-ToUserPath "$androidSdkPath\cmdline-tools\latest\bin" | Out-Null
+    Add-ToUserPath "$androidSdkPath\platform-tools" | Out-Null
+
+    # Tell Flutter where the SDK is
+    if (Test-CommandExists "flutter") {
+        flutter config --android-sdk="$androidSdkPath" 2>&1 | Out-Null
+    }
+}
+
+# --- Android SDK license ---
+if ($diagnosis["android_license"] -ne "OK" -and (Test-Path $sdkMgr)) {
     $installStep++
     Write-Status "[$installStep/$installTotal]" "WORK" "Accepting Android SDK licenses..."
-    $sdkMgr = "$androidSdkPath\cmdline-tools\latest\bin\sdkmanager.bat"
-    if (Test-Path $sdkMgr) {
-        echo "y`ny`ny`ny`ny`ny`ny`ny`ny" | & $sdkMgr --sdk_root="$androidSdkPath" --licenses 2>&1 | Out-String | Out-Null
-        Write-Status "[$installStep/$installTotal]" "OK" "Android SDK licenses accepted"
-    } else {
-        Write-Status "[$installStep/$installTotal]" "WARN" "Run: flutter doctor --android-licenses"
-    }
+    echo "y`ny`ny`ny`ny`ny`ny`ny`ny" | & $sdkMgr --sdk_root="$androidSdkPath" --licenses 2>&1 | Out-String | Out-Null
+    Write-Status "[$installStep/$installTotal]" "OK" "Android SDK licenses accepted"
 }
 
 # --- Flutter precache & config ---
