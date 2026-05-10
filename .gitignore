@@ -1,3 +1,6 @@
+# [추가] 환경변수 파일 — API 키 노출 방지
+.env
+
 # Miscellaneous
 *.class
 *.log

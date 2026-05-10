@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 // [개선] dart:io 직접 import 제거 — 웹 빌드 호환성 확보
@@ -19,7 +20,15 @@ import 'screens/mypage_tab.dart';
 import 'widgets/debug_panel.dart';
 import 'services/debug_logger.dart';
 
-void main() {
+// [추가] dotenv 비동기 초기화를 위해 async main
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // [추가] .env 파일 로딩 — API 키 관리
+  await dotenv.load(fileName: '.env').catchError((_) {
+    DebugLogger.logAppEvent('⚠️ .env file not found — using defaults');
+  });
+
   // [디버그 Level 1] 앱 시작 로깅
   DebugLogger.logAppEvent('✅ Silver Voice App starting...');
 
