@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../config/app_config.dart';
 import '../models/ws_status.dart';
-// [수정] accessible_button import 제거 — AccessibleCardButton 사용 제거에 따라
+import '../widgets/mic_button.dart';
 
 class HomeTab extends StatelessWidget {
   final WsStatus wsStatus;
@@ -30,134 +30,77 @@ class HomeTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white,
-      // [수정] Column → Stack으로 변경하여 마이크 버튼을 Positioned로 하단 고정
-      child: Stack(
-        children: [
-          // [수정] 패딩 bottom을 120으로 늘려 마이크 버튼 영역과 겹치지 않게 처리
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-            child: Column(
-              // [수정] mainAxisAlignment: center → start (마이크 버튼이 Column 밖으로 이동)
-              mainAxisAlignment: MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const Text(
-                  '음성만으로\n이력서를 완성하세요',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: AppConfig.fontSizeTitle,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '어려운 글쓰기 없이,\n편하게 말씀만 하시면 됩니다.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.grey[700],
-                    fontSize: AppConfig.fontSizeCaption,
-                  ),
-                ),
-                const SizedBox(height: 32),
-
-                _buildStatusMessage(),
-
-                if (transcript.isNotEmpty || aiResponse.isNotEmpty)
-                  _buildConversationBox(),
-
-                if (missingKorean.isNotEmpty && wsStatus == WsStatus.ready)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16.0),
-                    child: Text(
-                      '남은 항목: ${missingKorean.join(', ')}',
+      // [레이아웃 수정] SafeArea 추가
+      child: SafeArea(
+        child: Stack(
+          children: [
+            // [레이아웃 수정] SingleChildScrollView로 감싸 키보드/소형 화면 대응
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 200),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Text(
+                      '음성만으로\n이력서를 완성하세요',
+                      textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: Colors.grey[700],
-                        fontSize: AppConfig.fontSizeSmall,
+                        fontSize: AppConfig.fontSizeTitle,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
-
-                // [수정] Spacer 제거 — 마이크 버튼이 Column 밖으로 이동하여 불필요
-                // [수정] AccessibleCardButton('어르신 맞춤 일자리') 제거
-              ],
-            ),
-          ),
-
-          // [수정] 마이크 버튼을 Positioned로 화면 하단 고정 (bottom: 32)
-          Positioned(
-            bottom: 32,
-            left: 0,
-            right: 0,
-            child: Center(child: _buildRecordButton()),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecordButton() {
-    final micColor = _getMicColor();
-    final isRecording = wsStatus == WsStatus.recording;
-
-    return Semantics(
-      label: isRecording
-          ? '녹음 중입니다. 손을 떼면 녹음이 끝납니다.'
-          : '이력서 작성을 위한 음성 녹음 버튼. 꾹 눌러서 말씀해 주세요.',
-      button: true,
-      enabled: wsStatus.isInteractive || isRecording,
-      child: GestureDetector(
-        onTapDown: (_) => onStartRecording(),
-        onTapUp: (_) => onStopRecording(),
-        onTapCancel: onStopRecording,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: isRecording ? 140 : 120,
-          height: isRecording ? 140 : 120,
-          decoration: BoxDecoration(
-            color: micColor,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: micColor.withValues(alpha: 0.4),
-                blurRadius: 20,
-                spreadRadius: 5,
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(LucideIcons.mic, color: Colors.white, size: 48),
-              if (!isRecording)
-                const Padding(
-                  padding: EdgeInsets.only(top: 4),
-                  child: Text(
-                    '말하기',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(height: 8),
+                    Text(
+                      '어려운 글쓰기 없이,\n편하게 말씀만 하시면 됩니다.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.grey[700],
+                        fontSize: AppConfig.fontSizeCaption,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 32),
+
+                    _buildStatusMessage(),
+
+                    if (transcript.isNotEmpty || aiResponse.isNotEmpty)
+                      _buildConversationBox(),
+
+                    if (missingKorean.isNotEmpty && wsStatus == WsStatus.ready)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16.0),
+                        child: Text(
+                          '남은 항목: ${missingKorean.join(', ')}',
+                          style: TextStyle(
+                            color: Colors.grey[700],
+                            fontSize: AppConfig.fontSizeSmall,
+                          ),
+                          // [레이아웃 수정] 긴 텍스트 줄바꿈 허용
+                          textAlign: TextAlign.center,
+                          softWrap: true,
+                        ),
+                      ),
+                  ],
                 ),
-            ],
-          ),
+              ),
+            ),
+
+            // [UX 개선] 기존 단순 버튼 → MicButton 위젯으로 교체
+            Positioned(
+              bottom: 24,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: MicButton(
+                  wsStatus: wsStatus,
+                  onStartRecording: onStartRecording,
+                  onStopRecording: onStopRecording,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
-  }
-
-  Color _getMicColor() {
-    switch (wsStatus) {
-      case WsStatus.disconnected:
-        return Colors.grey[500]!;
-      case WsStatus.recording:
-        return Colors.red[500]!;
-      case WsStatus.speaking:
-        return Colors.green[600]!;
-      default:
-        return Colors.blue[500]!;
-    }
   }
 
   Widget _buildStatusMessage() {
@@ -190,12 +133,16 @@ class HomeTab extends StatelessWidget {
           children: [
             Icon(icon, size: 20, color: color),
             const SizedBox(width: 8),
-            Text(
-              wsStatus.label,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.bold,
-                fontSize: AppConfig.fontSizeCaption,
+            // [레이아웃 수정] Flexible로 긴 상태 텍스트 overflow 방지
+            Flexible(
+              child: Text(
+                wsStatus.label,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                  fontSize: AppConfig.fontSizeCaption,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -229,34 +176,41 @@ class HomeTab extends StatelessWidget {
         margin: const EdgeInsets.only(top: 32),
         padding: const EdgeInsets.all(16),
         width: double.infinity,
+        // [레이아웃 수정] 대화 박스 최대 높이 제한 + 내부 스크롤
+        constraints: const BoxConstraints(maxHeight: 200),
         decoration: BoxDecoration(
           color: Colors.grey[50],
           borderRadius: BorderRadius.circular(16),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (transcript.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  '나: $transcript',
-                  style: const TextStyle(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (transcript.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    '나: $transcript',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: AppConfig.fontSizeBody,
+                    ),
+                    // [레이아웃 수정] softWrap 보장
+                    softWrap: true,
+                  ),
+                ),
+              if (aiResponse.isNotEmpty)
+                Text(
+                  'AI: $aiResponse',
+                  style: TextStyle(
+                    color: Colors.blue[700],
                     fontWeight: FontWeight.bold,
                     fontSize: AppConfig.fontSizeBody,
                   ),
+                  softWrap: true,
                 ),
-              ),
-            if (aiResponse.isNotEmpty)
-              Text(
-                'AI: $aiResponse',
-                style: TextStyle(
-                  color: Colors.blue[700],
-                  fontWeight: FontWeight.bold,
-                  fontSize: AppConfig.fontSizeBody,
-                ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

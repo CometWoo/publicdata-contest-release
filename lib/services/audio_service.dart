@@ -9,10 +9,16 @@ import 'file_helper_stub.dart'
     if (dart.library.io) 'file_helper_io.dart'
     if (dart.library.html) 'file_helper_web.dart' as file_helper;
 
+import 'tts_service.dart';
+import 'debug_logger.dart';
+
 // [개선] 오디오 녹음/재생 로직을 별도 서비스로 분리하여 단일 책임 원칙 준수
 class AudioService {
   final AudioRecorder _audioRecorder = AudioRecorder();
   final AudioPlayer _audioPlayer = AudioPlayer();
+
+  // [수정] 로컬 TTS 서비스 통합
+  final TtsService ttsService = TtsService();
 
   final List<String> _playQueue = [];
   bool _isPlaying = false;
@@ -21,7 +27,7 @@ class AudioService {
   VoidCallback? onPlaybackComplete;
   void Function(String error)? onError;
 
-  bool get isPlaying => _isPlaying;
+  bool get isPlaying => _isPlaying || ttsService.state == TtsState.playing;
   bool get hasQueuedAudio => _playQueue.isNotEmpty;
 
   void init() {
@@ -34,6 +40,28 @@ class AudioService {
         onPlaybackComplete?.call();
       }
     });
+
+    // [수정] 로컬 TTS 초기화
+    ttsService.onStateChanged = () {
+      if (ttsService.state == TtsState.idle) {
+        onPlaybackComplete?.call();
+      }
+    };
+    ttsService.onError = (msg) {
+      onError?.call(msg);
+    };
+    ttsService.init();
+  }
+
+  // [수정] 로컬 TTS로 텍스트 음성 출력
+  Future<bool> speakLocal(String text) async {
+    DebugLogger.logAppEvent('[TTS] 로컬 TTS 요청: ${text.substring(0, text.length > 20 ? 20 : text.length)}...');
+    return await ttsService.speak(text);
+  }
+
+  // [수정] 로컬 TTS 중지
+  Future<void> stopLocalTts() async {
+    await ttsService.stop();
   }
 
   Future<bool> hasPermission() async {
@@ -112,5 +140,7 @@ class AudioService {
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     _playQueue.clear();
+    // [수정] 로컬 TTS도 정리
+    ttsService.dispose();
   }
 }

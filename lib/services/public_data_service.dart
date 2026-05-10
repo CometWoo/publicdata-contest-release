@@ -8,13 +8,16 @@ class PublicDataService {
   static const String _baseUrl =
       'https://apis.data.go.kr/B552474/SenuriService/getJobList';
 
+  // [수정] 요청 타임아웃 설정
+  static const Duration _requestTimeout = Duration(seconds: 15);
+
   String get _serviceKey {
     final key = dotenv.env['PUBLIC_DATA_API_KEY'] ?? '';
     if (key.isEmpty) {
       DebugLogger.logError(
         component: 'PublicDataService',
         function: '_serviceKey',
-        error: 'PUBLIC_DATA_API_KEY not found in .env',
+        error: 'PUBLIC_DATA_API_KEY not found in .env — API 호출이 실패합니다',
       );
     }
     return key;
@@ -24,15 +27,22 @@ class PublicDataService {
     int pageNo = 1,
     int numOfRows = 20,
   }) async {
+    final key = _serviceKey;
+    if (key.isEmpty) {
+      return PublicDataResult.error('API 키가 설정되지 않았습니다. .env 파일을 확인하세요.');
+    }
+
     final stopwatch = Stopwatch()..start();
-    final uri = Uri.parse(_baseUrl).replace(queryParameters: {
-      'serviceKey': _serviceKey,
-      'pageNo': pageNo.toString(),
-      'numOfRows': numOfRows.toString(),
-    });
+
+    // [수정] serviceKey를 queryParameters에 넣으면 이중 percent-encoding 발생.
+    // 공공데이터 키는 이미 URL-encoded 상태로 발급되므로 직접 문자열로 조립.
+    final url = '$_baseUrl?serviceKey=$key&pageNo=$pageNo&numOfRows=$numOfRows';
+    final uri = Uri.parse(url);
+
+    DebugLogger.logAppEvent('[API] 요청: $url');
 
     try {
-      final res = await http.get(uri);
+      final res = await http.get(uri).timeout(_requestTimeout);
       stopwatch.stop();
 
       DebugLogger.logApiRequest(
@@ -41,13 +51,17 @@ class PublicDataService {
         statusCode: res.statusCode,
         duration: stopwatch.elapsed,
       );
+      DebugLogger.logAppEvent(
+        '[API] 응답: statusCode=${res.statusCode}, 소요시간=${stopwatch.elapsedMilliseconds}ms',
+      );
 
       if (res.statusCode != 200) {
+        DebugLogger.logAppEvent('[ERROR] HTTP 실패: ${res.statusCode} body=${res.body.substring(0, (res.body.length > 200) ? 200 : res.body.length)}');
         return PublicDataResult.error('HTTP Error: ${res.statusCode}');
       }
 
       return _parseXml(res.body);
-    } catch (e, stackTrace) {
+    } on Exception catch (e, stackTrace) {
       stopwatch.stop();
       DebugLogger.logError(
         component: 'PublicDataService',
@@ -55,6 +69,7 @@ class PublicDataService {
         error: e,
         stackTrace: stackTrace,
       );
+      DebugLogger.logAppEvent('[ERROR] 네트워크 실패: $e');
       return PublicDataResult.error('네트워크 오류: $e');
     }
   }
