@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../config/app_config.dart';
+// [추가] 상세화면 네비게이션
+import 'job_detail_screen.dart';
 
 // [개선] 일자리 탭을 독립 위젯으로 분리
 class JobsTab extends StatelessWidget {
@@ -99,7 +101,17 @@ class JobsTab extends StatelessWidget {
         final score = job['similarity_score']?.toString() ?? '0';
         final reason = job['reason']?.toString();
 
-        return Semantics(
+        // [추가] 카드 탭 시 공공데이터 상세화면으로 네비게이션
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              ctx,
+              MaterialPageRoute(
+                builder: (_) => JobDetailScreen(job: job as Map<String, dynamic>),
+              ),
+            );
+          },
+          child: Semantics(
           // [개선] 각 채용공고 카드에 Semantics 적용
           label: '$title, $company, $location, AI 매칭 $score%',
           child: Container(
@@ -226,6 +238,7 @@ class JobsTab extends StatelessWidget {
               ],
             ),
           ),
+        ),
         );
       },
     );

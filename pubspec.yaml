@@ -21,6 +21,10 @@ dependencies:
   path_provider: ^2.1.2
   # 기존 React의 lucide-react 아이콘을 대체하는 패키지
   lucide_icons: 0.257.0
+  # [추가] .env 파일에서 환경변수 로딩
+  flutter_dotenv: ^5.2.1
+  # [추가] 공공데이터 API XML 응답 파싱
+  xml: ^6.5.0
 
 dev_dependencies:
   flutter_test:
@@ -29,3 +33,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # [추가] .env 파일을 앱 번들에 포함
+  assets:
+    - .env
