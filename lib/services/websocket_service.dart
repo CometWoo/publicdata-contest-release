@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../config/app_config.dart';
 import '../models/ws_status.dart';
+import 'debug_logger.dart';
 
 // [개선] WebSocket 메시지를 타입 안전하게 전달하는 콜백 타입 정의
 typedef WsMessageCallback = void Function(Map<String, dynamic> message);
@@ -67,8 +67,15 @@ class WebSocketService {
           _scheduleReconnect();
         },
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       _log('WS Connect Error: $e');
+      // [디버그 Level 3] 에러 추적
+      DebugLogger.logError(
+        component: 'WebSocketService',
+        function: 'connect',
+        error: e,
+        stackTrace: stackTrace,
+      );
       _cleanup();
       _scheduleReconnect();
     }
@@ -134,6 +141,8 @@ class WebSocketService {
 
   void _log(String msg) {
     debugPrint(msg);
+    // [디버그 Level 2] WebSocket 이벤트 로깅
+    DebugLogger.logWsEvent(msg);
     onLog?.call(msg);
   }
 

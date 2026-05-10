@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -18,8 +17,22 @@ import 'screens/resume_tab.dart';
 import 'screens/jobs_tab.dart';
 import 'screens/mypage_tab.dart';
 import 'widgets/debug_panel.dart';
+import 'services/debug_logger.dart';
 
 void main() {
+  // [디버그 Level 1] 앱 시작 로깅
+  DebugLogger.logAppEvent('✅ Silver Voice App starting...');
+
+  // [디버그 Level 3] 글로벌 에러 핸들링
+  FlutterError.onError = (details) {
+    DebugLogger.logError(
+      component: 'Flutter',
+      function: 'onError',
+      error: details.exceptionAsString(),
+      stackTrace: details.stack,
+    );
+  };
+
   runApp(const SilverVoiceApp());
 }
 
@@ -59,7 +72,7 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 1;
   bool _debugMode = false;
   bool _notificationEnabled = true;
-  List<String> _logs = [];
+  final List<String> _logs = [];
 
   // [개선] 데이터 상태
   Map<String, dynamic>? _resume;
@@ -85,6 +98,8 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
+    // [디버그 Level 1] 메인 화면 초기화 로깅
+    DebugLogger.logAppEvent('✅ MainScreen initialized — userId: $_userId');
     _initServices();
   }
 

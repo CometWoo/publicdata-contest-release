@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
+import 'debug_logger.dart';
 
 // [개선] HTTP API 호출을 별도 서비스로 분리
 class ApiService {
@@ -10,9 +11,21 @@ class ApiService {
   ApiService({required this.userId});
 
   Future<ApiResult<List<dynamic>>> fetchJobs() async {
+    final endpoint = '/recommend/$userId';
+    final stopwatch = Stopwatch()..start(); // [디버그 Level 2] 소요시간 측정
+
     try {
       final res = await http.post(
-        Uri.parse('${AppConfig.serverUrl}/recommend/$userId'),
+        Uri.parse('${AppConfig.serverUrl}$endpoint'),
+      );
+      stopwatch.stop();
+
+      // [디버그 Level 2] API 통신 로깅
+      DebugLogger.logApiRequest(
+        method: 'POST',
+        endpoint: endpoint,
+        statusCode: res.statusCode,
+        duration: stopwatch.elapsed,
       );
 
       if (res.statusCode == 200) {
@@ -38,15 +51,43 @@ class ApiService {
       }
 
       return ApiResult.error('HTTP Error: ${res.statusCode}');
-    } catch (e) {
+    } catch (e, stackTrace) {
+      stopwatch.stop();
+      // [디버그 Level 2] API 실패 로깅
+      DebugLogger.logApiRequest(
+        method: 'POST',
+        endpoint: endpoint,
+        statusCode: 0,
+        duration: stopwatch.elapsed,
+        error: e.toString(),
+      );
+      // [디버그 Level 3] 에러 추적
+      DebugLogger.logError(
+        component: 'ApiService',
+        function: 'fetchJobs',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return ApiResult.error('Network Error: $e');
     }
   }
 
   Future<ApiResult<bool>> resetResume() async {
+    final endpoint = '/resume/$userId';
+    final stopwatch = Stopwatch()..start();
+
     try {
       final res = await http.delete(
-        Uri.parse('${AppConfig.serverUrl}/resume/$userId'),
+        Uri.parse('${AppConfig.serverUrl}$endpoint'),
+      );
+      stopwatch.stop();
+
+      // [디버그 Level 2] API 통신 로깅
+      DebugLogger.logApiRequest(
+        method: 'DELETE',
+        endpoint: endpoint,
+        statusCode: res.statusCode,
+        duration: stopwatch.elapsed,
       );
 
       if (res.statusCode == 200) {
@@ -54,7 +95,22 @@ class ApiService {
       }
 
       return ApiResult.error('HTTP Error: ${res.statusCode}');
-    } catch (e) {
+    } catch (e, stackTrace) {
+      stopwatch.stop();
+      DebugLogger.logApiRequest(
+        method: 'DELETE',
+        endpoint: endpoint,
+        statusCode: 0,
+        duration: stopwatch.elapsed,
+        error: e.toString(),
+      );
+      // [디버그 Level 3] 에러 추적
+      DebugLogger.logError(
+        component: 'ApiService',
+        function: 'resetResume',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return ApiResult.error('Network Error: $e');
     }
   }
