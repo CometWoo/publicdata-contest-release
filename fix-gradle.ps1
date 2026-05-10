@@ -153,22 +153,41 @@ if ($migrated -eq 0) {
 }
 
 # ============================================================
-# Step 5: Clean old corrupted cache
+# Step 5: Clean corrupted cache (both old AND new paths)
 # ============================================================
-Write-Host "[5/6] Cleaning old Gradle cache..." -ForegroundColor White
+Write-Host "[5/6] Cleaning Gradle caches..." -ForegroundColor White
 
 $cleanedItems = 0
 
-# Clean old transforms
-if (Test-Path "$oldGradleHome\caches") {
-    Get-ChildItem "$oldGradleHome\caches\*\transforms" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-        Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+# Clean transforms and lock files from BOTH old and new Gradle homes
+foreach ($gradleDir in @($oldGradleHome, $GradlePath)) {
+    if (-not (Test-Path "$gradleDir\caches")) { continue }
+
+    # Delete transforms directories (the source of "could not move" errors)
+    Get-ChildItem "$gradleDir\caches\*\transforms" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $retries = 3
+        for ($i = 0; $i -lt $retries; $i++) {
+            Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            if (-not (Test-Path $_.FullName)) { break }
+            Start-Sleep -Seconds 2
+        }
+        if (-not (Test-Path $_.FullName)) {
+            $cleanedItems++
+            Write-Host "       Deleted: $($_.FullName)" -ForegroundColor Green
+        } else {
+            Write-Host "       [WARN] Could not delete: $($_.FullName)" -ForegroundColor Yellow
+        }
+    }
+
+    # Delete lock files
+    Get-ChildItem "$gradleDir\caches" -Filter "*.lock" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
         $cleanedItems++
     }
 
-    # Clean lock files
-    Get-ChildItem "$oldGradleHome\caches" -Filter "*.lock" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-        Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+    # Delete file-lock directories
+    Get-ChildItem "$gradleDir\caches" -Filter "file-lock" -Directory -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
         $cleanedItems++
     }
 }
@@ -230,9 +249,22 @@ Write-Host ""
 if ($ThenBuild) {
     Write-Host "  Building APK..." -ForegroundColor White
     Write-Host ""
-    flutter clean 2>&1 | Out-Null
-    flutter pub get 2>&1
-    flutter build apk --release 2>&1
+    Write-Host "  [1/3] flutter clean" -ForegroundColor Cyan
+    & flutter clean
+    Write-Host "  [2/3] flutter pub get" -ForegroundColor Cyan
+    & flutter pub get
+    Write-Host "  [3/3] flutter build apk --release" -ForegroundColor Cyan
+    & flutter build apk --release
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "  [FAIL] Build failed (exit code $LASTEXITCODE)." -ForegroundColor Red
+        Write-Host "  If you see 'Could not move temporary workspace' again," -ForegroundColor Yellow
+        Write-Host "  try running this script once more — a daemon may have" -ForegroundColor Yellow
+        Write-Host "  re-created lock files during the build." -ForegroundColor Yellow
+    } else {
+        Write-Host ""
+        Write-Host "  [OK] APK build succeeded!" -ForegroundColor Green
+    }
 } else {
     Write-Host "  Next steps:" -ForegroundColor White
     Write-Host "    flutter clean" -ForegroundColor Green
