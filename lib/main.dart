@@ -299,6 +299,10 @@ class _MainScreenState extends State<MainScreen> {
       setState(() => _jobs = result.data ?? []);
       _lastJobsFetch = DateTime.now();
       _addLog('API: Loaded ${_jobs.length} jobs.');
+      // [수정] 서버 안내 메시지 (이력서 미완성 등) 표시
+      if (result.message != null && _jobs.isEmpty) {
+        _showDialog('알림', result.message!);
+      }
     } else {
       _addLog('API Error: ${result.errorMessage}');
       if (result.errorMessage != null &&
@@ -423,13 +427,11 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ],
       ),
+      // [수정] StackFit.expand로 변경하여 자식이 화면 전체 폭을 차지하도록 수정
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          Column(
-            children: [
-              Expanded(child: _buildBody()),
-            ],
-          ),
+          _buildBody(),
           if (_debugMode)
             DebugPanel(
               wsStatus: _wsService.status,
@@ -495,6 +497,22 @@ class _MainScreenState extends State<MainScreen> {
           missingKorean: _missingKorean,
           onReset: _resetResume,
           onNavigateToHome: () => _onTabTapped(1),
+          // [수정] 이력서 필드 직접 편집 콜백
+          onFieldChanged: (key, value) {
+            setState(() {
+              _resume ??= {};
+              _resume![key] = key == 'age' ? (int.tryParse(value) ?? 0) : value;
+            });
+          },
+          onSave: () {
+            _addLog('Resume: 수동 저장 요청');
+            _wsService.send({
+              'type': 'update_resume',
+              'user_id': _userId,
+              'resume': _resume,
+            });
+            _wsService.send({'type': 'sync_resume', 'user_id': _userId});
+          },
         );
       case 3:
         return MyPageTab(

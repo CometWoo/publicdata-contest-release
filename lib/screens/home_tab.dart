@@ -57,7 +57,7 @@ class HomeTab extends StatelessWidget {
 
                     // [UI 개선] 대화 영역 또는 빈 상태
                     if (transcript.isNotEmpty || aiResponse.isNotEmpty)
-                      _buildConversationCard()
+                      _buildConversationCard(context)
                     else
                       _buildEmptyState(),
 
@@ -234,7 +234,8 @@ class HomeTab extends StatelessWidget {
   }
 
   // [UI 개선] 말풍선 스타일 대화 카드
-  Widget _buildConversationCard() {
+  // [수정] context를 _buildBubble에 전달하여 화면 비율 기반 width 계산
+  Widget _buildConversationCard(BuildContext context) {
     return Semantics(
       label: '대화 내용',
       child: Container(
@@ -246,10 +247,12 @@ class HomeTab extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (transcript.isNotEmpty) _buildBubble(
+                context,
                 text: transcript,
                 isUser: true,
               ),
               if (aiResponse.isNotEmpty) _buildBubble(
+                context,
                 text: aiResponse,
                 isUser: false,
               ),
@@ -261,13 +264,15 @@ class HomeTab extends StatelessWidget {
   }
 
   // [UI 개선] 개별 말풍선
-  Widget _buildBubble({required String text, required bool isUser}) {
+  // [수정] maxWidth를 화면 비율로 계산하여 width 잘림 방지
+  Widget _buildBubble(BuildContext context, {required String text, required bool isUser}) {
+    final screenWidth = MediaQuery.of(context).size.width;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        constraints: const BoxConstraints(maxWidth: 280),
+        constraints: BoxConstraints(maxWidth: screenWidth * 0.75),
         decoration: BoxDecoration(
           color: isUser ? const Color(0xFF1565C0) : Colors.white,
           borderRadius: BorderRadius.only(

@@ -36,18 +36,13 @@ class ApiService {
         }
 
         final recommendations = data['recommendations'];
-        if (recommendations != null &&
-            recommendations is List &&
-            recommendations.isNotEmpty) {
-          return ApiResult.success(recommendations);
+        // [수정] recommendations가 빈 배열 + message인 경우 (이력서 미완성)도
+        // 에러가 아닌 빈 목록으로 정상 반환. message는 별도 필드로 전달.
+        if (recommendations != null && recommendations is List) {
+          return ApiResult.success(recommendations, message: data['message']?.toString());
         }
 
-        final message = data['message']?.toString();
-        if (message != null) {
-          return ApiResult.error(message);
-        }
-
-        return ApiResult.success([]);
+        return ApiResult.success([], message: data['message']?.toString());
       }
 
       return ApiResult.error('HTTP Error: ${res.statusCode}');
@@ -116,17 +111,19 @@ class ApiService {
   }
 }
 
-// [개선] API 결과를 타입 안전하게 전달하는 래퍼
 class ApiResult<T> {
   final T? data;
   final String? errorMessage;
+  // [수정] 서버 안내 메시지 (이력서 미완성 등) — 에러와 구분
+  final String? message;
   final bool isSuccess;
 
-  ApiResult.success(this.data)
+  ApiResult.success(this.data, {this.message})
       : isSuccess = true,
         errorMessage = null;
 
   ApiResult.error(this.errorMessage)
       : isSuccess = false,
-        data = null;
+        data = null,
+        message = null;
 }
