@@ -1,19 +1,20 @@
 #Requires -Version 5.1
 # fix-gradle.ps1 - Gradle cache lock/corruption fixer
 # Fixes "Could not move temporary workspace to immutable location" errors
+# by moving GRADLE_USER_HOME to a clean path without permission issues.
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File fix-gradle.ps1
 #   powershell -ExecutionPolicy Bypass -File fix-gradle.ps1 -ThenBuild
+#   powershell -ExecutionPolicy Bypass -File fix-gradle.ps1 -GradlePath "E:\MyGradle"
 
 param(
+    [string]$GradlePath = "D:\GradleCache",
     [switch]$ThenBuild
 )
 
 $ErrorActionPreference = "Continue"
-$gradleHome = "$env:USERPROFILE\.gradle"
-$cachesDir = "$gradleHome\caches"
-$fixCount = 0
+$oldGradleHome = "$env:USERPROFILE\.gradle"
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
@@ -21,10 +22,12 @@ Write-Host "  Gradle Cache Lock Fixer" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# --- Step 1: Kill all Gradle/Java daemon processes ---
-Write-Host "[1/5] Stopping Gradle and Java daemons..." -ForegroundColor White
+# ============================================================
+# Step 1: Kill all Gradle/Java daemon processes
+# ============================================================
+Write-Host "[1/6] Stopping Gradle and Java daemons..." -ForegroundColor White
 
-$processNames = @("java", "javaw", "gradle", "dart", "dartvm", "kotlin-daemon")
+$processNames = @("java", "javaw", "gradle", "kotlin-daemon")
 $killed = 0
 foreach ($name in $processNames) {
     $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
@@ -36,10 +39,6 @@ foreach ($name in $processNames) {
     }
 }
 
-if (Test-Path "$gradleHome\daemon") {
-    & gradle --stop 2>&1 | Out-Null
-}
-
 if ($killed -gt 0) {
     Write-Host "       Killed $killed process(es). Waiting 3 seconds..." -ForegroundColor Green
     Start-Sleep -Seconds 3
@@ -47,109 +46,189 @@ if ($killed -gt 0) {
     Write-Host "       No running processes found." -ForegroundColor DarkGray
 }
 
-# --- Step 2: Remove corrupted transforms directories ---
-Write-Host "[2/5] Cleaning corrupted transforms cache..." -ForegroundColor White
+# ============================================================
+# Step 2: Create new Gradle home directory
+# ============================================================
+Write-Host "[2/6] Setting up new Gradle home: $GradlePath ..." -ForegroundColor White
 
-if (Test-Path $cachesDir) {
-    $cacheVersions = Get-ChildItem $cachesDir -Directory -ErrorAction SilentlyContinue
-    foreach ($ver in $cacheVersions) {
-        $transformsDir = Join-Path $ver.FullName "transforms"
-        if (Test-Path $transformsDir) {
-            $items = Get-ChildItem $transformsDir -Directory -ErrorAction SilentlyContinue
-            $tempItems = $items | Where-Object { $_.Name -match "^[a-f0-9]+-[a-f0-9]{8}-" }
-            $targetItems = $items | Where-Object { $_.Name -match "^[a-f0-9]+$" -and $_.Name.Length -eq 32 }
+if (-not (Test-Path $GradlePath)) {
+    try {
+        New-Item -ItemType Directory -Path $GradlePath -Force | Out-Null
+        Write-Host "       Created: $GradlePath" -ForegroundColor Green
+    } catch {
+        Write-Host "       [FAIL] Cannot create $GradlePath : $_" -ForegroundColor Red
+        Write-Host "       Try a different path: -GradlePath `"C:\GradleCache`"" -ForegroundColor Yellow
+        exit 1
+    }
+} else {
+    Write-Host "       Already exists: $GradlePath" -ForegroundColor DarkGray
+}
 
-            foreach ($temp in $tempItems) {
-                Remove-Item $temp.FullName -Recurse -Force -ErrorAction SilentlyContinue
-                $fixCount++
-            }
-            foreach ($target in $targetItems) {
-                Remove-Item $target.FullName -Recurse -Force -ErrorAction SilentlyContinue
-                $fixCount++
-            }
+# Verify the path is writable
+$testFile = "$GradlePath\.write-test"
+try {
+    [System.IO.File]::WriteAllText($testFile, "test")
+    Remove-Item $testFile -Force
+    Write-Host "       Path is writable." -ForegroundColor Green
+} catch {
+    Write-Host "       [FAIL] Cannot write to $GradlePath" -ForegroundColor Red
+    exit 1
+}
 
-            if ($fixCount -gt 0) {
-                Write-Host "       Cleaned $fixCount item(s) from $($ver.Name)\transforms" -ForegroundColor Green
-            }
+# ============================================================
+# Step 3: Set GRADLE_USER_HOME environment variable
+# ============================================================
+Write-Host "[3/6] Setting GRADLE_USER_HOME environment variable..." -ForegroundColor White
+
+$currentGradleHome = [Environment]::GetEnvironmentVariable("GRADLE_USER_HOME", "User")
+
+# Set for current session
+$env:GRADLE_USER_HOME = $GradlePath
+
+# Set permanently (User level)
+[Environment]::SetEnvironmentVariable("GRADLE_USER_HOME", $GradlePath, "User")
+
+if ($currentGradleHome -and $currentGradleHome -ne $GradlePath) {
+    Write-Host "       Changed: $currentGradleHome -> $GradlePath" -ForegroundColor Green
+} elseif (-not $currentGradleHome) {
+    Write-Host "       Set: GRADLE_USER_HOME = $GradlePath" -ForegroundColor Green
+} else {
+    Write-Host "       Already set to $GradlePath" -ForegroundColor DarkGray
+}
+
+# Also write to Git Bash profile
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$gradleUnix = $GradlePath -replace "\\","/"
+if ($gradleUnix -match "^([A-Za-z]):(.*)") {
+    $gradleUnix = "/" + $Matches[1].ToLower() + $Matches[2]
+}
+$exportLine = "export GRADLE_USER_HOME=`"$gradleUnix`""
+
+foreach ($rcFile in @("$env:USERPROFILE\.bashrc", "$env:USERPROFILE\.bash_profile")) {
+    $rcExists = Test-Path $rcFile
+    $alreadyHas = $false
+    if ($rcExists) {
+        $alreadyHas = Select-String -Path $rcFile -Pattern "GRADLE_USER_HOME" -Quiet
+    }
+    if (-not $alreadyHas) {
+        if (-not $rcExists) {
+            [System.IO.File]::WriteAllText($rcFile, "", $utf8NoBom)
         }
+        $content = [System.IO.File]::ReadAllText($rcFile, $utf8NoBom)
+        $addition = "`n# Gradle cache relocated by fix-gradle.ps1`n$exportLine`n"
+        [System.IO.File]::WriteAllText($rcFile, $content + $addition, $utf8NoBom)
+        $rcName = Split-Path -Leaf $rcFile
+        Write-Host "       Added to ~/$rcName" -ForegroundColor Green
     }
-} else {
-    Write-Host "       No Gradle cache found." -ForegroundColor DarkGray
 }
 
-if ($fixCount -eq 0) {
-    Write-Host "       No corrupted entries found. Cleaning entire transforms..." -ForegroundColor Yellow
-    Get-ChildItem "$cachesDir\*\transforms" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+# ============================================================
+# Step 4: Migrate essential config from old .gradle (optional)
+# ============================================================
+Write-Host "[4/6] Migrating settings from old .gradle ..." -ForegroundColor White
+
+$migrated = 0
+if (Test-Path $oldGradleHome) {
+    # Migrate gradle.properties if exists
+    $oldProps = "$oldGradleHome\gradle.properties"
+    $newProps = "$GradlePath\gradle.properties"
+    if ((Test-Path $oldProps) -and -not (Test-Path $newProps)) {
+        Copy-Item $oldProps $newProps -Force
+        $migrated++
+        Write-Host "       Migrated: gradle.properties" -ForegroundColor Green
+    }
+
+    # Migrate init scripts if exist
+    $oldInit = "$oldGradleHome\init.d"
+    $newInit = "$GradlePath\init.d"
+    if ((Test-Path $oldInit) -and -not (Test-Path $newInit)) {
+        Copy-Item $oldInit $newInit -Recurse -Force
+        $migrated++
+        Write-Host "       Migrated: init.d/" -ForegroundColor Green
+    }
+}
+
+if ($migrated -eq 0) {
+    Write-Host "       Nothing to migrate." -ForegroundColor DarkGray
+}
+
+# ============================================================
+# Step 5: Clean old corrupted cache
+# ============================================================
+Write-Host "[5/6] Cleaning old Gradle cache..." -ForegroundColor White
+
+$cleanedItems = 0
+
+# Clean old transforms
+if (Test-Path "$oldGradleHome\caches") {
+    Get-ChildItem "$oldGradleHome\caches\*\transforms" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
         Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-        $fixCount++
+        $cleanedItems++
     }
-    Write-Host "       Removed $fixCount transforms directory(ies)." -ForegroundColor Green
+
+    # Clean lock files
+    Get-ChildItem "$oldGradleHome\caches" -Filter "*.lock" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+        $cleanedItems++
+    }
 }
 
-# --- Step 3: Remove lock files ---
-Write-Host "[3/5] Removing lock files..." -ForegroundColor White
-
-$lockFiles = Get-ChildItem $cachesDir -Filter "*.lock" -Recurse -ErrorAction SilentlyContinue
-$lockCount = $lockFiles.Count
-foreach ($lock in $lockFiles) {
-    Remove-Item $lock.FullName -Force -ErrorAction SilentlyContinue
+# Clean project build cache
+foreach ($dir in @(".\build", ".\android\.gradle", ".\.dart_tool")) {
+    if (Test-Path $dir) {
+        Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+        $cleanedItems++
+    }
 }
 
-$gcLockFiles = Get-ChildItem $cachesDir -Filter "gc.properties" -Recurse -ErrorAction SilentlyContinue
-foreach ($gc in $gcLockFiles) {
-    Remove-Item $gc.FullName -Force -ErrorAction SilentlyContinue
-    $lockCount++
-}
+Write-Host "       Cleaned $cleanedItems item(s)." -ForegroundColor Green
 
-Write-Host "       Removed $lockCount lock file(s)." -ForegroundColor Green
+# ============================================================
+# Step 6: Verify
+# ============================================================
+Write-Host "[6/6] Verifying..." -ForegroundColor White
 
-# --- Step 4: Fix file permissions ---
-Write-Host "[4/5] Resetting file permissions..." -ForegroundColor White
-
-$readOnlyFiles = Get-ChildItem $cachesDir -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.IsReadOnly }
-$roCount = 0
-foreach ($ro in $readOnlyFiles) {
-    $ro.IsReadOnly = $false
-    $roCount++
-}
-
-Write-Host "       Fixed $roCount read-only file(s)." -ForegroundColor Green
-
-# --- Step 5: Clean project build cache ---
-Write-Host "[5/5] Cleaning project build cache..." -ForegroundColor White
-
-$projectBuild = ".\build"
-$projectAndroidBuild = ".\android\.gradle"
-$cleaned = @()
-if (Test-Path $projectBuild) {
-    Remove-Item $projectBuild -Recurse -Force -ErrorAction SilentlyContinue
-    $cleaned += "build/"
-}
-if (Test-Path $projectAndroidBuild) {
-    Remove-Item $projectAndroidBuild -Recurse -Force -ErrorAction SilentlyContinue
-    $cleaned += "android/.gradle/"
-}
-if (Test-Path ".\.dart_tool") {
-    Remove-Item ".\.dart_tool" -Recurse -Force -ErrorAction SilentlyContinue
-    $cleaned += ".dart_tool/"
-}
-
-if ($cleaned.Count -gt 0) {
-    Write-Host "       Cleaned: $($cleaned -join ', ')" -ForegroundColor Green
+$verified = $true
+$envCheck = [Environment]::GetEnvironmentVariable("GRADLE_USER_HOME", "User")
+if ($envCheck -eq $GradlePath) {
+    Write-Host "       GRADLE_USER_HOME = $envCheck" -ForegroundColor Green
 } else {
-    Write-Host "       No project build cache found." -ForegroundColor DarkGray
+    Write-Host "       [WARN] GRADLE_USER_HOME not set correctly" -ForegroundColor Yellow
+    $verified = $false
 }
 
-# --- Summary ---
+if (Test-Path $GradlePath) {
+    Write-Host "       Directory exists: $GradlePath" -ForegroundColor Green
+} else {
+    Write-Host "       [WARN] Directory missing" -ForegroundColor Yellow
+    $verified = $false
+}
+
+Write-Host "       Session GRADLE_USER_HOME = $env:GRADLE_USER_HOME" -ForegroundColor Green
+
+# ============================================================
+# Summary
+# ============================================================
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "  Fix complete." -ForegroundColor Green
+if ($verified) {
+    Write-Host "  [OK] Fix complete." -ForegroundColor Green
+} else {
+    Write-Host "  [WARN] Fix applied with warnings." -ForegroundColor Yellow
+}
 Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  What changed:" -ForegroundColor White
+Write-Host "    GRADLE_USER_HOME = $GradlePath" -ForegroundColor Cyan
+Write-Host "    (was: $oldGradleHome)" -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "  Gradle will now use $GradlePath" -ForegroundColor White
+Write-Host "  instead of $oldGradleHome" -ForegroundColor White
+Write-Host "  This avoids file-lock issues on the User profile path." -ForegroundColor DarkGray
 Write-Host ""
 
 if ($ThenBuild) {
-    Write-Host "  Running: flutter clean + pub get + build apk..." -ForegroundColor White
+    Write-Host "  Building APK..." -ForegroundColor White
     Write-Host ""
     flutter clean 2>&1 | Out-Null
     flutter pub get 2>&1
@@ -162,5 +241,8 @@ if ($ThenBuild) {
     Write-Host ""
     Write-Host "  Or run with auto-build:" -ForegroundColor DarkGray
     Write-Host "    powershell -ExecutionPolicy Bypass -File fix-gradle.ps1 -ThenBuild" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  Git Bash users:" -ForegroundColor White
+    Write-Host "    source ~/.bash_profile" -ForegroundColor Green
 }
 Write-Host ""
