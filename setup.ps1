@@ -57,19 +57,31 @@ function Add-ToUserPath {
         $env:Path += ";$NewPath"
         $added = $true
     }
-    # Git Bash PATH (~/.bashrc)
-    $bashrc = "$env:USERPROFILE\.bashrc"
+    # Git Bash PATH (~/.bashrc AND ~/.bash_profile)
     $unixPath = $NewPath -replace "\\","/"
     if ($unixPath -match "^([A-Za-z]):(.*)") {
         $unixPath = "/" + $Matches[1].ToLower() + $Matches[2]
     }
     $exportLine = "export PATH=`"`$PATH:$unixPath`""
-    $bashrcExists = Test-Path $bashrc
-    if (-not $bashrcExists -or -not (Select-String -Path $bashrc -Pattern ([regex]::Escape($unixPath)) -Quiet)) {
-        Add-Content -Path $bashrc -Value "`n# Added by Silver Voice setup" -Encoding UTF8
-        Add-Content -Path $bashrc -Value $exportLine -Encoding UTF8
-        $added = $true
-        Write-Status "     " "INFO" "Added to ~/.bashrc for Git Bash"
+
+    # Write to both .bashrc and .bash_profile for compatibility
+    foreach ($rcFile in @("$env:USERPROFILE\.bashrc", "$env:USERPROFILE\.bash_profile")) {
+        $rcExists = Test-Path $rcFile
+        $alreadyHas = $false
+        if ($rcExists) {
+            $alreadyHas = Select-String -Path $rcFile -Pattern ([regex]::Escape($unixPath)) -Quiet
+        }
+        if (-not $alreadyHas) {
+            if (-not $rcExists) {
+                New-Item -ItemType File -Path $rcFile -Force | Out-Null
+            }
+            Add-Content -Path $rcFile -Value "" -Encoding UTF8
+            Add-Content -Path $rcFile -Value "# Added by Silver Voice setup" -Encoding UTF8
+            Add-Content -Path $rcFile -Value $exportLine -Encoding UTF8
+            $rcName = Split-Path -Leaf $rcFile
+            Write-Status "     " "INFO" "Added to ~/$rcName for Git Bash"
+            $added = $true
+        }
     }
     return $added
 }
@@ -261,18 +273,47 @@ if (Test-CommandExists "code") {
     $diagnosis["vscode"] = "MISSING"
 }
 
-# PATH check
+# PATH check and auto-registration (runs EVERY time, not just on install)
 Write-Host ""
 Write-Host "--- PATH Registration ---" -ForegroundColor White
-$pathEntries = $env:Path -split ";"
-$flutterInPath = $pathEntries | Where-Object { $_ -match "flutter" }
-$androidInPath = $pathEntries | Where-Object { $_ -match "android|Android" }
 
-if ($flutterInPath) {
-    Write-Status "     " "OK" "Flutter in PATH: $($flutterInPath -join ', ')"
-} else {
-    Write-Status "     " "FAIL" "Flutter not in system PATH"
+# Find Flutter bin directory for PATH registration
+$flutterBinDir = $null
+if ($flutterPath) {
+    $flutterBinDir = Split-Path -Parent $flutterPath
 }
+# Also check common locations even if flutter wasn't found in PATH
+if (-not $flutterBinDir) {
+    $checkPaths = @(
+        "$InstallDir\flutter\bin",
+        "$env:USERPROFILE\flutter\bin",
+        "C:\flutter\bin",
+        "C:\src\flutter\bin",
+        "C:\portable\flutter\bin"
+    )
+    foreach ($cp in $checkPaths) {
+        if (Test-Path "$cp\flutter.bat") {
+            $flutterBinDir = $cp
+            break
+        }
+    }
+}
+
+if ($flutterBinDir) {
+    # Always ensure Flutter is in Windows User PATH + Git Bash ~/.bashrc
+    $pathRegistered = Add-ToUserPath $flutterBinDir
+    $pathEntries = $env:Path -split ";"
+    $flutterInPath = $pathEntries | Where-Object { $_ -match "flutter" }
+    Write-Status "     " "OK" "Flutter in PATH: $($flutterInPath -join ', ')"
+    if ($pathRegistered) {
+        Write-Status "     " "INFO" "PATH was missing -- registered now"
+    }
+} else {
+    Write-Status "     " "FAIL" "Flutter not found -- will install in Phase 2"
+}
+
+$pathEntries = $env:Path -split ";"
+$androidInPath = $pathEntries | Where-Object { $_ -match "android|Android" }
 if ($androidInPath) {
     Write-Status "     " "OK" "Android in PATH: $($androidInPath -join ', ')"
 } else {
@@ -511,7 +552,7 @@ Write-Host ""
 Write-Host "  If commands fail, restart your terminal (PATH update)." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  Git Bash users:" -ForegroundColor White
-Write-Host "    source ~/.bashrc                 # reload PATH" -ForegroundColor Green
-Write-Host "    OR restart Git Bash" -ForegroundColor DarkGray
+Write-Host "    source ~/.bash_profile           # reload PATH" -ForegroundColor Green
+Write-Host "    OR close and reopen Git Bash" -ForegroundColor DarkGray
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host ""
