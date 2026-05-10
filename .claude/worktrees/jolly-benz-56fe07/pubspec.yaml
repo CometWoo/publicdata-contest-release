@@ -1,0 +1,31 @@
+name: silver_voice
+description: "A new Flutter project for Silver Voice."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # HTTP 통신을 위한 패키지
+  http: ^1.2.0
+  # WebSocket 통신을 위한 패키지
+  web_socket_channel: ^3.0.3
+  # 마이크 녹음(STT)을 위한 패키지
+  record: ^6.2.0
+  # 오디오 재생(TTS)을 위한 패키지
+  audioplayers: ^6.6.0
+  # 임시 폴더 경로를 가져오기 위한 패키지
+  path_provider: ^2.1.2
+  # 기존 React의 lucide-react 아이콘을 대체하는 패키지
+  lucide_icons: 0.257.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
