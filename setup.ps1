@@ -601,6 +601,22 @@ if (Test-CommandExists "flutter") {
         Write-Host "  Accepting Android licenses via Flutter..." -ForegroundColor DarkGray
         echo "y`ny`ny`ny`ny`ny`ny`ny`ny`ny`n" | flutter doctor --android-licenses 2>&1 | Out-Null
     }
+
+    # Clean corrupted Gradle transforms cache
+    # Gradle fails when it can't move temp workspaces to immutable locations.
+    # Deleting the entire transforms folder for each cache version forces
+    # a clean rebuild on next build.
+    $gradleCaches = "$env:USERPROFILE\.gradle\caches"
+    if (Test-Path $gradleCaches) {
+        $transformsDirs = Get-ChildItem "$gradleCaches\*\transforms" -Directory -ErrorAction SilentlyContinue
+        if ($transformsDirs) {
+            Write-Host "  Cleaning Gradle transforms cache..." -ForegroundColor DarkGray
+            foreach ($tDir in $transformsDirs) {
+                Remove-Item $tDir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            Write-Status "     " "INFO" "Gradle transforms cache cleaned ($($transformsDirs.Count) dir(s))"
+        }
+    }
 }
 
 # ================================================================
@@ -643,6 +659,9 @@ if ($SkipClone) {
     }
 
     Write-Host ""
+    Write-Host "         Running flutter clean..." -ForegroundColor DarkGray
+    flutter clean 2>&1 | Out-String | Out-Null
+
     Write-Status "[DEPS]" "WORK" "Running flutter pub get..."
     $pubOutput = flutter pub get 2>&1 | Out-String
     if ($pubOutput -match "Got dependencies" -or $pubOutput -match "Resolving" -or $pubOutput -match "Changed") {
