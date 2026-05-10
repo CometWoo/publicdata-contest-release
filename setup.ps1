@@ -326,6 +326,57 @@ if ($flutterBinDir) {
     Write-Status "     " "FAIL" "Flutter not found -- will install in Phase 2"
 }
 
+# Find and register JAVA_HOME (runs every time)
+$javaHome = $env:JAVA_HOME
+if (-not $javaHome -or -not (Test-Path $javaHome)) {
+    $jdkSearchPaths = @(
+        "C:\Program Files\Microsoft\jdk-*",
+        "C:\Program Files\Eclipse Adoptium\jdk-*",
+        "C:\Program Files\Java\jdk-*",
+        "C:\Program Files\Java\jdk*"
+    )
+    foreach ($pattern in $jdkSearchPaths) {
+        $found = Resolve-Path $pattern -ErrorAction SilentlyContinue | Sort-Object -Descending | Select-Object -First 1
+        if ($found) {
+            $javaHome = $found.Path
+            break
+        }
+    }
+}
+if ($javaHome -and (Test-Path $javaHome)) {
+    # Set JAVA_HOME for Windows
+    if (-not $env:JAVA_HOME -or $env:JAVA_HOME -ne $javaHome) {
+        [Environment]::SetEnvironmentVariable("JAVA_HOME", $javaHome, "User")
+        $env:JAVA_HOME = $javaHome
+    }
+    if ($env:Path -notlike "*$javaHome\bin*") {
+        $env:Path += ";$javaHome\bin"
+    }
+    Add-ToUserPath "$javaHome\bin" | Out-Null
+
+    # Also write JAVA_HOME to bash_profile for Git Bash
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $javaUnix = $javaHome -replace "\\","/"
+    if ($javaUnix -match "^([A-Za-z]):(.*)") {
+        $javaUnix = "/" + $Matches[1].ToLower() + $Matches[2]
+    }
+    foreach ($rcFile in @("$env:USERPROFILE\.bashrc", "$env:USERPROFILE\.bash_profile")) {
+        if (-not (Test-Path $rcFile)) {
+            [System.IO.File]::WriteAllText($rcFile, "", $utf8NoBom)
+        }
+        $content = [System.IO.File]::ReadAllText($rcFile, $utf8NoBom)
+        if ($content -notmatch "JAVA_HOME") {
+            $javaExport = "`nexport JAVA_HOME=`"$javaUnix`"`nexport PATH=`"`$PATH:`$JAVA_HOME/bin`"`n"
+            [System.IO.File]::WriteAllText($rcFile, $content + $javaExport, $utf8NoBom)
+            $rcName = Split-Path -Leaf $rcFile
+            Write-Status "     " "INFO" "JAVA_HOME added to ~/$rcName"
+        }
+    }
+    Write-Status "     " "OK" "JAVA_HOME: $javaHome"
+} else {
+    Write-Status "     " "WARN" "JAVA_HOME not set -- will install JDK in Phase 2"
+}
+
 $pathEntries = $env:Path -split ";"
 $androidInPath = $pathEntries | Where-Object { $_ -match "android|Android" }
 if ($androidInPath) {
@@ -391,9 +442,14 @@ if ($diagnosis["java"] -ne "OK") {
     Write-Status "[$installStep/$installTotal]" "WORK" "Installing JDK $JDK_VERSION (Microsoft OpenJDK)..."
     if ($hasWinget) {
         & winget install --id Microsoft.OpenJDK.$JDK_VERSION --accept-package-agreements --accept-source-agreements -e 2>&1 | Out-String | Out-Null
-        $jdkPath = "C:\Program Files\Microsoft\jdk-$JDK_VERSION*\bin"
+        $jdkPath = "C:\Program Files\Microsoft\jdk-$JDK_VERSION*"
         $jdkResolved = (Resolve-Path $jdkPath -ErrorAction SilentlyContinue | Select-Object -First 1).Path
-        if ($jdkResolved) { $env:Path += ";$jdkResolved" }
+        if ($jdkResolved) {
+            $env:Path += ";$jdkResolved\bin"
+            $env:JAVA_HOME = $jdkResolved
+            [Environment]::SetEnvironmentVariable("JAVA_HOME", $jdkResolved, "User")
+            Write-Status "     " "INFO" "JAVA_HOME set to $jdkResolved"
+        }
     } else {
         Write-Status "[$installStep/$installTotal]" "FAIL" "Please install JDK 17 manually: https://learn.microsoft.com/en-us/java/openjdk/download"
     }
