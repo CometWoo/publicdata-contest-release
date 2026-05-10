@@ -24,7 +24,7 @@ $JDK_VERSION = "17"
 $MIN_DART_VERSION = "3.2.0"
 
 # --- Init ---
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OriginalPath = $env:Path
 
@@ -301,7 +301,7 @@ if ($diagnosis["git"] -ne "OK") {
     $installStep++
     Write-Status "[$installStep/$installTotal]" "WORK" "Installing Git..."
     if ($hasWinget) {
-        winget install --id Git.Git --accept-package-agreements --accept-source-agreements -e 2>&1 | Out-Null
+        & winget install --id Git.Git --accept-package-agreements --accept-source-agreements -e 2>&1 | Out-String | Out-Null
         $env:Path += ";C:\Program Files\Git\cmd"
     } else {
         Write-Status "[$installStep/$installTotal]" "FAIL" "Please install Git manually: https://git-scm.com/download/win"
@@ -319,7 +319,7 @@ if ($diagnosis["java"] -ne "OK") {
     $installStep++
     Write-Status "[$installStep/$installTotal]" "WORK" "Installing JDK $JDK_VERSION (Microsoft OpenJDK)..."
     if ($hasWinget) {
-        winget install --id Microsoft.OpenJDK.$JDK_VERSION --accept-package-agreements --accept-source-agreements -e 2>&1 | Out-Null
+        & winget install --id Microsoft.OpenJDK.$JDK_VERSION --accept-package-agreements --accept-source-agreements -e 2>&1 | Out-String | Out-Null
         $jdkPath = "C:\Program Files\Microsoft\jdk-$JDK_VERSION*\bin"
         $jdkResolved = (Resolve-Path $jdkPath -ErrorAction SilentlyContinue | Select-Object -First 1).Path
         if ($jdkResolved) { $env:Path += ";$jdkResolved" }
@@ -438,12 +438,13 @@ if ($SkipClone) {
         Write-Status "[CLONE]" "SKIP" "Repo already cloned at $ProjectDir"
         Set-Location $ProjectDir
         Write-Host "         Pulling latest..." -ForegroundColor DarkGray
-        git pull origin main 2>&1 | Out-Null
+        & git pull origin main 2>&1 | Out-Null
     } else {
         Write-Status "[CLONE]" "WORK" "Cloning $RepoUrl ..."
-        git clone $RepoUrl $ProjectDir 2>&1
+        $cloneOutput = & git clone $RepoUrl $ProjectDir 2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) {
             Write-Status "[CLONE]" "FAIL" "git clone failed"
+            Write-Host $cloneOutput -ForegroundColor Red
             exit 1
         }
         Set-Location $ProjectDir
