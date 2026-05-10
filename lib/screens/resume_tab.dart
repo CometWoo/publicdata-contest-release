@@ -184,7 +184,7 @@ class ResumeTab extends StatelessWidget {
       child: Semantics(
         // [개선] 각 필드에 Semantics 적용
         label: hasValue
-            ? '${_fieldLabels[key]}: ${key == 'age' ? '${val}세' : val}'
+            ? '${_fieldLabels[key]}: ${key == 'age' ? '$val세' : val}'
             : '${_fieldLabels[key]}: 미입력. 홈에서 음성으로 입력해주세요.',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -203,7 +203,7 @@ class ResumeTab extends StatelessWidget {
               children: [
                 if (hasValue) ...[
                   Text(
-                    key == 'age' ? '${val}세' : val!,
+                    key == 'age' ? '$val세' : val,
                     style: const TextStyle(
                       // [개선] 값 텍스트 크기 상향
                       fontSize: AppConfig.fontSizeBody,

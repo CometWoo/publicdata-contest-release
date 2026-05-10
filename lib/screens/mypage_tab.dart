@@ -269,7 +269,7 @@ class MyPageTab extends StatelessWidget {
             Switch(
               value: value,
               onChanged: onChanged,
-              activeColor: Colors.blue[500],
+              activeThumbColor: Colors.blue[500],
             ),
           ],
         ),
