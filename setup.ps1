@@ -65,6 +65,9 @@ function Add-ToUserPath {
     $exportLine = "export PATH=`"`$PATH:$unixPath`""
 
     # Write to both .bashrc and .bash_profile for compatibility
+    # IMPORTANT: Use UTF8 without BOM -- PowerShell 5.1's -Encoding UTF8 adds BOM
+    # which Bash interprets as garbage characters ($'\357\273\277')
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     foreach ($rcFile in @("$env:USERPROFILE\.bashrc", "$env:USERPROFILE\.bash_profile")) {
         $rcExists = Test-Path $rcFile
         $alreadyHas = $false
@@ -72,15 +75,28 @@ function Add-ToUserPath {
             $alreadyHas = Select-String -Path $rcFile -Pattern ([regex]::Escape($unixPath)) -Quiet
         }
         if (-not $alreadyHas) {
-            if (-not $rcExists) {
-                New-Item -ItemType File -Path $rcFile -Force | Out-Null
+            $linesToAppend = "`n# Added by Silver Voice setup`n$exportLine`n"
+            if ($rcExists) {
+                $existing = [System.IO.File]::ReadAllText($rcFile, $utf8NoBom)
+                [System.IO.File]::WriteAllText($rcFile, $existing + $linesToAppend, $utf8NoBom)
+            } else {
+                [System.IO.File]::WriteAllText($rcFile, $linesToAppend, $utf8NoBom)
             }
-            Add-Content -Path $rcFile -Value "" -Encoding UTF8
-            Add-Content -Path $rcFile -Value "# Added by Silver Voice setup" -Encoding UTF8
-            Add-Content -Path $rcFile -Value $exportLine -Encoding UTF8
             $rcName = Split-Path -Leaf $rcFile
             Write-Status "     " "INFO" "Added to ~/$rcName for Git Bash"
             $added = $true
+        }
+    }
+    # Also strip BOM from existing files if present (fix for previous runs)
+    foreach ($rcFile in @("$env:USERPROFILE\.bashrc", "$env:USERPROFILE\.bash_profile")) {
+        if (Test-Path $rcFile) {
+            $bytes = [System.IO.File]::ReadAllBytes($rcFile)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+                $clean = $bytes[3..($bytes.Length - 1)]
+                [System.IO.File]::WriteAllBytes($rcFile, [byte[]]$clean)
+                $rcName = Split-Path -Leaf $rcFile
+                Write-Status "     " "INFO" "Removed BOM from ~/$rcName (fixing previous run)"
+            }
         }
     }
     return $added
@@ -439,16 +455,89 @@ if ($diagnosis["flutter"] -ne "OK") {
     }
 }
 
-# --- Android SDK license ---
-if ($diagnosis["android_license"] -ne "OK" -and $diagnosis["android_sdk"] -eq "OK") {
+# --- Install Android SDK (command-line tools) ---
+if ($diagnosis["android_sdk"] -ne "OK") {
+    $installStep++
+    $androidSdkPath = "$InstallDir\Android\Sdk"
+    $cmdlineDir = "$androidSdkPath\cmdline-tools"
+    $cmdlineZipUrl = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
+    $cmdlineZip = "$env:TEMP\android-cmdline-tools.zip"
+
+    Write-Status "[$installStep/$installTotal]" "WORK" "Installing Android SDK command-line tools..."
+
+    if (-not (Test-Path $androidSdkPath)) {
+        New-Item -ItemType Directory -Path $androidSdkPath -Force | Out-Null
+    }
+
+    if (-not (Test-Path "$cmdlineDir\latest\bin\sdkmanager.bat")) {
+        if (-not (Test-Path $cmdlineZip)) {
+            Write-Host "         Downloading Android command-line tools (~150 MB)..." -ForegroundColor DarkGray
+            try {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                $wc = New-Object System.Net.WebClient
+                $wc.DownloadFile($cmdlineZipUrl, $cmdlineZip)
+            } catch {
+                Write-Status "[$installStep/$installTotal]" "FAIL" "Download failed: $_"
+                Write-Host "         Manual: https://developer.android.com/studio#command-line-tools-only" -ForegroundColor Yellow
+            }
+        }
+
+        if (Test-Path $cmdlineZip) {
+            Write-Host "         Extracting..." -ForegroundColor DarkGray
+            $tempExtract = "$env:TEMP\android-cmdline-extract"
+            Expand-Archive -Path $cmdlineZip -DestinationPath $tempExtract -Force
+            if (-not (Test-Path $cmdlineDir)) {
+                New-Item -ItemType Directory -Path $cmdlineDir -Force | Out-Null
+            }
+            if (Test-Path "$tempExtract\cmdline-tools") {
+                if (Test-Path "$cmdlineDir\latest") {
+                    Remove-Item "$cmdlineDir\latest" -Recurse -Force
+                }
+                Rename-Item "$tempExtract\cmdline-tools" "latest"
+                Move-Item "$tempExtract\latest" "$cmdlineDir\latest" -Force
+            }
+            Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $sdkManager = "$cmdlineDir\latest\bin\sdkmanager.bat"
+    if (Test-Path $sdkManager) {
+        # Set ANDROID_HOME
+        [Environment]::SetEnvironmentVariable("ANDROID_HOME", $androidSdkPath, "User")
+        $env:ANDROID_HOME = $androidSdkPath
+        $env:Path += ";$androidSdkPath\cmdline-tools\latest\bin;$androidSdkPath\platform-tools"
+
+        Write-Host "         Installing platform-tools and build-tools..." -ForegroundColor DarkGray
+        echo "y" | & $sdkManager --sdk_root="$androidSdkPath" "platform-tools" "build-tools;34.0.0" "platforms;android-34" 2>&1 | Out-String | Out-Null
+
+        Write-Host "         Accepting licenses..." -ForegroundColor DarkGray
+        echo "y`ny`ny`ny`ny`ny`ny`ny`ny" | & $sdkManager --sdk_root="$androidSdkPath" --licenses 2>&1 | Out-String | Out-Null
+
+        Add-ToUserPath "$androidSdkPath\cmdline-tools\latest\bin" | Out-Null
+        Add-ToUserPath "$androidSdkPath\platform-tools" | Out-Null
+
+        # Tell Flutter where the SDK is
+        if (Test-CommandExists "flutter") {
+            flutter config --android-sdk="$androidSdkPath" 2>&1 | Out-Null
+        }
+
+        Write-Status "[$installStep/$installTotal]" "OK" "Android SDK installed to $androidSdkPath"
+    } else {
+        Write-Status "[$installStep/$installTotal]" "FAIL" "sdkmanager not found after extraction"
+        Write-Host "         Install Android Studio instead: https://developer.android.com/studio" -ForegroundColor Yellow
+    }
+}
+
+# --- Android SDK license (if SDK exists but licenses not accepted) ---
+if ($diagnosis["android_license"] -ne "OK" -and ($diagnosis["android_sdk"] -eq "OK" -or (Test-Path "$androidSdkPath\cmdline-tools\latest\bin\sdkmanager.bat"))) {
     $installStep++
     Write-Status "[$installStep/$installTotal]" "WORK" "Accepting Android SDK licenses..."
-    $sdkManager = "$androidSdkPath\cmdline-tools\latest\bin\sdkmanager.bat"
-    if (Test-Path $sdkManager) {
-        echo "y" | & $sdkManager --licenses 2>&1 | Out-Null
+    $sdkMgr = "$androidSdkPath\cmdline-tools\latest\bin\sdkmanager.bat"
+    if (Test-Path $sdkMgr) {
+        echo "y`ny`ny`ny`ny`ny`ny`ny`ny" | & $sdkMgr --sdk_root="$androidSdkPath" --licenses 2>&1 | Out-String | Out-Null
         Write-Status "[$installStep/$installTotal]" "OK" "Android SDK licenses accepted"
     } else {
-        Write-Status "[$installStep/$installTotal]" "WARN" "sdkmanager not found. Run: flutter doctor --android-licenses"
+        Write-Status "[$installStep/$installTotal]" "WARN" "Run: flutter doctor --android-licenses"
     }
 }
 
