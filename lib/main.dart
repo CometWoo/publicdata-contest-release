@@ -202,8 +202,15 @@ class _MainScreenState extends State<MainScreen> {
         _addLog('WS: AI reply finished.');
         // [개선] throttle 취소 후 최종 상태 반영
         _aiResponseThrottle?.cancel();
+        // [수정] 서버에서 오디오가 오지 않았으면 로컬 TTS로 폴백
         if (!_audioService.isPlaying && !_audioService.hasQueuedAudio) {
-          _wsService.status = WsStatus.ready;
+          if (_aiResponse.isNotEmpty) {
+            _addLog('[TTS] 서버 오디오 없음 — 로컬 TTS로 폴백');
+            _wsService.status = WsStatus.speaking;
+            _audioService.speakLocal(_aiResponse);
+          } else {
+            _wsService.status = WsStatus.ready;
+          }
         }
         if (mounted) setState(() {});
         break;

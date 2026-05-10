@@ -15,8 +15,10 @@ dependencies:
   web_socket_channel: ^3.0.3
   # 마이크 녹음(STT)을 위한 패키지
   record: ^6.2.0
-  # 오디오 재생(TTS)을 위한 패키지
+  # 오디오 재생(서버 TTS)을 위한 패키지
   audioplayers: ^6.6.0
+  # [수정] 로컬 TTS 엔진 패키지 추가 (한국어 지원)
+  flutter_tts: ^4.2.0
   # 임시 폴더 경로를 가져오기 위한 패키지
   path_provider: ^2.1.2
   # 기존 React의 lucide-react 아이콘을 대체하는 패키지

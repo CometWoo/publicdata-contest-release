@@ -39,16 +39,19 @@ class ResumeTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.grey[50],
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(),
-          const SizedBox(height: 24),
-          Expanded(child: _buildResumeCard()),
-        ],
+    // [레이아웃 수정] SafeArea 적용 + 키보드에 의한 overflow 방지
+    return SafeArea(
+      child: Container(
+        color: Colors.grey[50],
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(),
+            const SizedBox(height: 24),
+            Expanded(child: _buildResumeCard()),
+          ],
+        ),
       ),
     );
   }
@@ -57,27 +60,33 @@ class ResumeTab extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '어르신의',
-              style: TextStyle(
-                // [개선] 시니어 폰트 크기 적용
-                fontSize: AppConfig.fontSizeTitle,
-                fontWeight: FontWeight.bold,
-                color: Colors.blue[600],
+        // [레이아웃 수정] Flexible로 감싸 텍스트가 버튼과 겹���지 않도록 처리
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '어르신의',
+                style: TextStyle(
+                  fontSize: AppConfig.fontSizeTitle,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[600],
+                ),
               ),
-            ),
-            const Text(
-              '멋진 이력서입니다!',
-              style: TextStyle(
-                fontSize: AppConfig.fontSizeTitle,
-                fontWeight: FontWeight.bold,
+              const Text(
+                '멋진 이력서입니다!',
+                style: TextStyle(
+                  fontSize: AppConfig.fontSizeTitle,
+                  fontWeight: FontWeight.bold,
+                ),
+                // [레이아웃 수정] overflow 방지
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+        const SizedBox(width: 12),
         // [개선] GestureDetector → Semantics + InkWell로 교체, 터치 영역 확대
         Semantics(
           label: '이력서 초기화 버튼',
@@ -89,7 +98,6 @@ class ResumeTab extends StatelessWidget {
               onTap: onReset,
               borderRadius: BorderRadius.circular(8),
               child: ConstrainedBox(
-                // [개선] 최소 48dp 터치 영역 보장
                 constraints: const BoxConstraints(
                   minWidth: AppConfig.minTouchTarget,
                   minHeight: AppConfig.minTouchTarget,
@@ -110,7 +118,6 @@ class ResumeTab extends StatelessWidget {
                         style: TextStyle(
                           color: Colors.red[500],
                           fontWeight: FontWeight.bold,
-                          // [개선] 버튼 텍스트도 최소 14sp
                           fontSize: AppConfig.fontSizeSmall,
                         ),
                       ),
@@ -142,7 +149,6 @@ class ResumeTab extends StatelessWidget {
         children: [
           ..._fieldLabels.keys.map((key) => _buildField(key)),
           const SizedBox(height: 10),
-          // [개선] 버튼 최소 높이 48dp 보장
           Semantics(
             label: '홈 화면으로 이동하여 음성으로 이력서 작성하기',
             button: true,
@@ -152,7 +158,6 @@ class ResumeTab extends StatelessWidget {
                 backgroundColor: Colors.blue[50],
                 foregroundColor: Colors.blue[600],
                 elevation: 0,
-                // [개선] 터치 영역 확대
                 minimumSize: const Size(double.infinity, AppConfig.minTouchTarget),
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
@@ -182,7 +187,6 @@ class ResumeTab extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 20.0),
       child: Semantics(
-        // [개선] 각 필드에 Semantics 적용
         label: hasValue
             ? '${_fieldLabels[key]}: ${key == 'age' ? '$val세' : val}'
             : '${_fieldLabels[key]}: 미입력. 홈에서 음성으로 입력해주세요.',
@@ -192,7 +196,6 @@ class ResumeTab extends StatelessWidget {
             Text(
               _fieldLabels[key]!,
               style: TextStyle(
-                // [개선] 라벨 폰트 크기 상향
                 fontSize: AppConfig.fontSizeSmall,
                 fontWeight: FontWeight.bold,
                 color: Colors.grey[700],
@@ -202,12 +205,17 @@ class ResumeTab extends StatelessWidget {
             Row(
               children: [
                 if (hasValue) ...[
-                  Text(
-                    key == 'age' ? '$val세' : val,
-                    style: const TextStyle(
-                      // [개선] 값 텍스트 크기 상향
-                      fontSize: AppConfig.fontSizeBody,
-                      fontWeight: FontWeight.bold,
+                  // [레이아웃 수정] Flexible로 감싸 긴 텍스트 overflow 방지
+                  Flexible(
+                    child: Text(
+                      key == 'age' ? '$val세' : val,
+                      style: const TextStyle(
+                        fontSize: AppConfig.fontSizeBody,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                      softWrap: true,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -220,11 +228,14 @@ class ResumeTab extends StatelessWidget {
                     ),
                   ),
                 ] else ...[
-                  Text(
-                    '홈에서 음성으로 입력해주세요',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: AppConfig.fontSizeCaption,
+                  Flexible(
+                    child: Text(
+                      '홈에서 음성으로 입력해주세요',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: AppConfig.fontSizeCaption,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
