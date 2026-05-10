@@ -3,6 +3,29 @@
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+# --- Auto-detect Flutter SDK path ---
+$flutterCmd = Get-Command flutter -ErrorAction SilentlyContinue
+if (-not $flutterCmd) {
+    $searchPaths = @(
+        "$env:USERPROFILE\flutter\bin",
+        "$env:LOCALAPPDATA\flutter\bin",
+        "C:\flutter\bin",
+        "C:\src\flutter\bin",
+        "C:\portable\flutter\bin",
+        "D:\flutter\bin"
+    )
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $parentDir = Split-Path -Parent $scriptDir
+    $searchPaths += "$parentDir\flutter\bin"
+
+    foreach ($p in $searchPaths) {
+        if (Test-Path "$p\flutter.bat") {
+            $env:Path += ";$p"
+            break
+        }
+    }
+}
+
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Silver Voice - Environment Setup" -ForegroundColor Cyan
@@ -13,20 +36,24 @@ $hasError = $false
 
 # --- Step 1: Flutter SDK ---
 Write-Host "[1/6] Flutter SDK ..." -NoNewline
-$flutterVersion = flutter --version 2>&1 | Out-String
-if ($LASTEXITCODE -eq 0 -or $flutterVersion -match "Flutter") {
+$flutterCmd = Get-Command flutter -ErrorAction SilentlyContinue
+if ($flutterCmd) {
+    $flutterVersion = flutter --version 2>&1 | Out-String
     $ver = ($flutterVersion -split "`n")[0].Trim()
     Write-Host " [OK] $ver" -ForegroundColor Green
+    Write-Host "       Path: $($flutterCmd.Source)" -ForegroundColor DarkGray
 } else {
-    Write-Host " [FAIL] Flutter is not installed." -ForegroundColor Red
-    Write-Host "    Install: https://docs.flutter.dev/get-started/install/windows" -ForegroundColor Yellow
+    Write-Host " [FAIL] Flutter not found in PATH." -ForegroundColor Red
+    Write-Host "    1. Install: https://docs.flutter.dev/get-started/install/windows" -ForegroundColor Yellow
+    Write-Host "    2. Or set PATH: `$env:Path += `";C:\your\flutter\bin`"" -ForegroundColor Yellow
     $hasError = $true
 }
 
 # --- Step 2: Dart SDK ---
 Write-Host "[2/6] Dart SDK ..." -NoNewline
-$dartVersion = dart --version 2>&1 | Out-String
-if ($LASTEXITCODE -eq 0 -or $dartVersion -match "Dart") {
+$dartCmd = Get-Command dart -ErrorAction SilentlyContinue
+if ($dartCmd) {
+    $dartVersion = dart --version 2>&1 | Out-String
     Write-Host " [OK] $($dartVersion.Trim())" -ForegroundColor Green
 
     if ($dartVersion -match "(\d+)\.(\d+)\.(\d+)") {
@@ -36,8 +63,12 @@ if ($LASTEXITCODE -eq 0 -or $dartVersion -match "Dart") {
         }
     }
 } else {
-    Write-Host " [FAIL] Dart SDK is not installed." -ForegroundColor Red
-    $hasError = $true
+    if ($flutterCmd) {
+        Write-Host " [WARN] dart not in PATH, but Flutter includes Dart" -ForegroundColor Yellow
+    } else {
+        Write-Host " [FAIL] Dart SDK not found." -ForegroundColor Red
+        $hasError = $true
+    }
 }
 
 # --- Step 3: Chrome ---
@@ -50,39 +81,46 @@ if ((Test-Path $chromePath) -or (Test-Path $chromePath2)) {
     Write-Host " [WARN] Chrome not found - flutter run -d chrome unavailable" -ForegroundColor Yellow
 }
 
-# --- Step 4: Flutter Web support ---
-Write-Host "[4/6] Flutter Web support ..." -NoNewline
-$devices = flutter devices 2>&1 | Out-String
-if ($devices -match "Chrome|chrome|Web") {
-    Write-Host " [OK] Web device available" -ForegroundColor Green
+# Skip steps 4-6 if Flutter is not available
+if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
+    Write-Host "[4/6] Flutter Web support ... [SKIP] Flutter required" -ForegroundColor DarkGray
+    Write-Host "[5/6] Flutter packages ...    [SKIP] Flutter required" -ForegroundColor DarkGray
+    Write-Host "[6/6] Dart analysis ...       [SKIP] Flutter required" -ForegroundColor DarkGray
 } else {
-    Write-Host " [WARN] No Web device. Enabling..." -ForegroundColor Yellow
-    flutter config --enable-web 2>&1 | Out-Null
-}
+    # --- Step 4: Flutter Web support ---
+    Write-Host "[4/6] Flutter Web support ..." -NoNewline
+    $devices = flutter devices 2>&1 | Out-String
+    if ($devices -match "Chrome|chrome|Web") {
+        Write-Host " [OK] Web device available" -ForegroundColor Green
+    } else {
+        Write-Host " [WARN] No Web device. Enabling..." -ForegroundColor Yellow
+        flutter config --enable-web 2>&1 | Out-Null
+    }
 
-# --- Step 5: Dependencies ---
-Write-Host "[5/6] Flutter packages ..." -NoNewline
-$pubResult = flutter pub get 2>&1 | Out-String
-if ($pubResult -match "Got dependencies" -or $pubResult -match "Resolving") {
-    Write-Host " [OK] Dependencies installed" -ForegroundColor Green
-} else {
-    Write-Host " [FAIL] Dependency install failed" -ForegroundColor Red
-    Write-Host $pubResult -ForegroundColor Red
-    $hasError = $true
-}
+    # --- Step 5: Dependencies ---
+    Write-Host "[5/6] Flutter packages ..." -NoNewline
+    $pubResult = flutter pub get 2>&1 | Out-String
+    if ($pubResult -match "Got dependencies" -or $pubResult -match "Resolving") {
+        Write-Host " [OK] Dependencies installed" -ForegroundColor Green
+    } else {
+        Write-Host " [FAIL] Dependency install failed" -ForegroundColor Red
+        Write-Host $pubResult -ForegroundColor Red
+        $hasError = $true
+    }
 
-# --- Step 6: Static analysis ---
-Write-Host "[6/6] Dart analysis ..." -NoNewline
-$analyzeResult = flutter analyze --no-pub 2>&1 | Out-String
-if ($analyzeResult -match "No issues found" -or $analyzeResult -match "0 issues") {
-    Write-Host " [OK] No issues" -ForegroundColor Green
-} elseif ($analyzeResult -match "error") {
-    Write-Host " [FAIL] Analysis errors found" -ForegroundColor Red
-    Write-Host $analyzeResult -ForegroundColor Yellow
-    $hasError = $true
-} else {
-    Write-Host " [WARN] Warnings found (build OK)" -ForegroundColor Yellow
-    Write-Host $analyzeResult -ForegroundColor Yellow
+    # --- Step 6: Static analysis ---
+    Write-Host "[6/6] Dart analysis ..." -NoNewline
+    $analyzeResult = flutter analyze --no-pub 2>&1 | Out-String
+    if ($analyzeResult -match "No issues found" -or $analyzeResult -match "0 issues") {
+        Write-Host " [OK] No issues" -ForegroundColor Green
+    } elseif ($analyzeResult -match "error") {
+        Write-Host " [FAIL] Analysis errors found" -ForegroundColor Red
+        Write-Host $analyzeResult -ForegroundColor Yellow
+        $hasError = $true
+    } else {
+        Write-Host " [WARN] Warnings found (build OK)" -ForegroundColor Yellow
+        Write-Host $analyzeResult -ForegroundColor Yellow
+    }
 }
 
 # --- Summary ---
