@@ -49,13 +49,29 @@ function Test-Admin {
 
 function Add-ToUserPath {
     param([string]$NewPath)
+    $added = $false
+    # Windows PATH (PowerShell, CMD)
     $current = [Environment]::GetEnvironmentVariable("Path", "User")
     if ($current -notlike "*$NewPath*") {
         [Environment]::SetEnvironmentVariable("Path", "$current;$NewPath", "User")
         $env:Path += ";$NewPath"
-        return $true
+        $added = $true
     }
-    return $false
+    # Git Bash PATH (~/.bashrc)
+    $bashrc = "$env:USERPROFILE\.bashrc"
+    $unixPath = $NewPath -replace "\\","/"
+    if ($unixPath -match "^([A-Za-z]):(.*)") {
+        $unixPath = "/" + $Matches[1].ToLower() + $Matches[2]
+    }
+    $exportLine = "export PATH=`"`$PATH:$unixPath`""
+    $bashrcExists = Test-Path $bashrc
+    if (-not $bashrcExists -or -not (Select-String -Path $bashrc -Pattern ([regex]::Escape($unixPath)) -Quiet)) {
+        Add-Content -Path $bashrc -Value "`n# Added by Silver Voice setup" -Encoding UTF8
+        Add-Content -Path $bashrc -Value $exportLine -Encoding UTF8
+        $added = $true
+        Write-Status "     " "INFO" "Added to ~/.bashrc for Git Bash"
+    }
+    return $added
 }
 
 function Test-CommandExists {
@@ -492,6 +508,10 @@ Write-Host "    flutter run -d windows         # Windows desktop" -ForegroundCol
 Write-Host "    flutter run -d <device_id>     # Connected mobile" -ForegroundColor Green
 Write-Host "    flutter build apk              # Android APK" -ForegroundColor Green
 Write-Host ""
-Write-Host "  If commands fail, restart terminal first (PATH update)." -ForegroundColor Yellow
+Write-Host "  If commands fail, restart your terminal (PATH update)." -ForegroundColor Yellow
+Write-Host ""
+Write-Host "  Git Bash users:" -ForegroundColor White
+Write-Host "    source ~/.bashrc                 # reload PATH" -ForegroundColor Green
+Write-Host "    OR restart Git Bash" -ForegroundColor DarkGray
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host ""
