@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(Get-Command gh -ErrorAction SilentlyContinue)",
-      "Bash(git push *)"
-    ]
-  }
-}
