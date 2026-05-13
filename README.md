@@ -1,6 +1,12 @@
 # Silver Voice
-
+<img width="768" height="432" alt="Image" src="https://github.com/user-attachments/assets/3af4204f-15b6-410e-98a7-c9e4dcf078ba" />
 한국 시니어를 위한 음성 기반 이력서 작성 앱입니다. 마이크 버튼을 꾹 누르고 말씀하시면, AI가 대화를 통해 이력서를 자동으로 완성합니다.
+
+## UI
+<img width="220" height="438" alt="Image" src="https://github.com/user-attachments/assets/2adf6dfa-fdb8-437a-a379-acb08cd2e28b" />
+<img width="220" height="438" alt="Image" src="https://github.com/user-attachments/assets/db227d1f-e8e3-42cd-896a-c55c09c2afcb" />
+<img width="220" height="438" alt="Image" src="https://github.com/user-attachments/assets/44bcf8dd-233e-45ef-ad0f-09d7331df6f9" />
+<img width="220" height="438" alt="Image" src="https://github.com/user-attachments/assets/0d0c01dd-6a90-413c-9b06-0ade28bde406" />
 
 ## 주요 기능
 
